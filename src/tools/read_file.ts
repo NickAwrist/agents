@@ -35,7 +35,11 @@ export class ReadFileTool extends BaseTool {
     if (!path) {
       return 'Error: missing path (provide path or filename)';
     }
-    const content = await fs.readFile(path, 'utf8');
-    return content;
+    try {
+      const content = await fs.readFile(path, 'utf8');
+      return content;
+    } catch (e) {
+      return 'Error: failed to read file ' + path + ': ' + (e as Error).message;
+    }
   }
 }
