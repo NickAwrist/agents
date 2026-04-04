@@ -1,19 +1,20 @@
 /**
- * Self-contained HTML viewer for query log JSON: embeds payload as base64 UTF-8, renders with vanilla JS.
+ * Self-contained HTML viewer for RunContext snapshots.
+ * Embeds the JSON payload as base64, renders with vanilla JS.
  */
 
 function b64EncodeUtf8(json: string): string {
   return Buffer.from(json, "utf8").toString("base64");
 }
 
-export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
-  const payload = b64EncodeUtf8(JSON.stringify(data));
+export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
+  const payload = b64EncodeUtf8(JSON.stringify(snapshot));
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Query log</title>
+  <title>Agent Run</title>
   <style>
     :root {
       --bg: #ececee;
@@ -22,6 +23,9 @@ export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
       --text: #1a1a1f;
       --muted: #5c5c66;
       --accent: #2563eb;
+      --green: #16a34a;
+      --red: #b91c1c;
+      --orange: #d97706;
       --mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
       --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
@@ -64,14 +68,7 @@ export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
       padding: 0.85rem 1rem;
       margin-bottom: 0.75rem;
     }
-    .query { white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; }
-    .response {
-      border-left: 3px solid var(--accent);
-      padding-left: 0.75rem;
-      margin-top: 0.25rem;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
+    .prompt { white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; }
     details {
       border: 1px solid var(--border);
       background: #fff;
@@ -106,6 +103,18 @@ export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
     details[open] > summary::before { transform: rotate(45deg); margin-top: -0.1em; }
     summary:hover { background: #e6e6ea; }
     .summary-meta { font-weight: 400; font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
+    .badge {
+      display: inline-block;
+      padding: 0.1em 0.45em;
+      border-radius: 3px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-done { background: #dcfce7; color: var(--green); }
+    .badge-running { background: #fef3c7; color: var(--orange); }
+    .badge-error { background: #fee2e2; color: var(--red); }
     .dur {
       margin-left: auto;
       font-family: var(--mono);
@@ -114,21 +123,6 @@ export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
       font-weight: 400;
     }
     .details-body { padding: 0.65rem 0.75rem 0.85rem; border-top: 1px solid var(--border); background: var(--panel); }
-    .path-line { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); margin-bottom: 0.65rem; word-break: break-all; }
-    .turn {
-      border-left: 2px solid var(--border);
-      margin-left: 0.35rem;
-      padding: 0.5rem 0 0.65rem 0.75rem;
-      margin-bottom: 0.5rem;
-    }
-    .turn-h {
-      font-size: 0.65rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-      margin-bottom: 0.35rem;
-    }
     .block-label {
       font-size: 0.65rem;
       font-weight: 600;
@@ -149,8 +143,9 @@ export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
       overflow-x: auto;
     }
     .pre.dark { background: #1e1e24; color: #e8e8ed; border-color: #2a2a32; }
-    details.tool > summary { background: #f5f5f0; }
-    details.tool[open] > summary { border-bottom: 1px solid var(--border); }
+    .step { margin-bottom: 0.5rem; }
+    .step > summary { background: #f5f5f0; }
+    .step[open] > summary { border-bottom: 1px solid var(--border); }
     .nested-label {
       font-size: 0.65rem;
       font-weight: 600;
@@ -160,7 +155,7 @@ export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
       margin: 0.75rem 0 0.4rem;
     }
     .empty { color: var(--muted); font-size: 0.85rem; font-style: italic; }
-    .err { color: #b91c1c; font-size: 0.85rem; }
+    .err { color: var(--red); font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -186,6 +181,7 @@ export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
     if (!start || !end) return "";
     var ms = new Date(end) - new Date(start);
     if (isNaN(ms)) return "";
+    if (ms < 1000) return ms + "ms";
     return (ms / 1000).toFixed(2) + "s";
   }
   function el(tag, attrs, innerHTML) {
@@ -201,118 +197,127 @@ export function buildQueryLogViewerHtml(data: Record<string, unknown>): string {
     p.textContent = content == null ? "" : String(content);
     return p;
   }
-  function renderTool(tool, runDepth) {
+  function badgeClass(status) {
+    if (status === "done") return "badge badge-done";
+    if (status === "error") return "badge badge-error";
+    return "badge badge-running";
+  }
+  function stepLabel(step) {
+    if (step.kind === "llm_call") return "LLM Call";
+    if (step.kind === "tool_call") return step.toolName || "Tool Call";
+    if (step.kind === "complete") return "Complete";
+    if (step.kind === "error") return "Error";
+    return step.kind;
+  }
+
+  function renderStep(step) {
     var d = document.createElement("details");
-    d.className = "tool";
-    if (runDepth === 0) d.open = true;
-    var name = tool.toolName != null ? String(tool.toolName) : "(tool)";
-    var du = durMs(tool.startedAt, tool.endedAt);
+    d.className = "step";
+    d.open = step.kind === "error" || !!step.childRun;
+    var du = durMs(step.startedAt, step.endedAt);
     var sum = el("summary", null,
-      esc(name) +
-      (tool.path ? '<span class="summary-meta">' + esc(tool.path) + "</span>" : "") +
+      esc(stepLabel(step)) +
+      ' <span class="' + badgeClass(step.status) + '">' + esc(step.status) + "</span>" +
+      ' <span class="summary-meta">turn ' + step.turnIndex + "</span>" +
       (du ? '<span class="dur">' + esc(du) + "</span>" : "")
     );
     d.appendChild(sum);
     var body = el("div", { class: "details-body" });
-    body.appendChild(el("div", { class: "block-label" }, "Arguments"));
-    body.appendChild(textPre("dark", JSON.stringify(tool.args != null ? tool.args : {}, null, 2)));
-    if (tool.result != null && tool.result !== "") {
-      body.appendChild(el("div", { class: "block-label" }, "Result"));
-      body.appendChild(textPre("", tool.result));
+    if (step.args && Object.keys(step.args).length > 0) {
+      body.appendChild(el("div", { class: "block-label" }, "Arguments"));
+      body.appendChild(textPre("dark", JSON.stringify(step.args, null, 2)));
     }
-    if (tool.nestedRun) {
-      body.appendChild(el("div", { class: "nested-label" }, "Nested agent"));
-      body.appendChild(renderAgentRun(tool.nestedRun, runDepth + 1));
+    if (step.result != null && step.result !== "") {
+      body.appendChild(el("div", { class: "block-label" }, "Result"));
+      body.appendChild(textPre("", step.result));
+    }
+    if (step.error != null) {
+      body.appendChild(el("div", { class: "block-label" }, "Error"));
+      body.appendChild(el("div", { class: "err" }, esc(step.error)));
+    }
+    if (step.childRun) {
+      body.appendChild(el("div", { class: "nested-label" }, "Nested Agent"));
+      body.appendChild(renderRun(step.childRun, 1));
     }
     d.appendChild(body);
     return d;
   }
-  function renderTurn(turn, runDepth) {
-    var wrap = el("div", { class: "turn" });
-    wrap.appendChild(el("div", { class: "turn-h" }, "Turn " + (turn.turnIndex != null ? turn.turnIndex : "?")));
-    wrap.appendChild(el("div", { class: "block-label" }, "Input"));
-    wrap.appendChild(textPre("", turn.userInput || ""));
-    var tools = turn.tools;
-    if (tools && tools.length) {
-      wrap.appendChild(el("div", { class: "block-label" }, "Tools"));
-      for (var i = 0; i < tools.length; i++) wrap.appendChild(renderTool(tools[i], runDepth));
-    }
-    if (turn.assistantContent) {
-      wrap.appendChild(el("div", { class: "block-label" }, "Assistant"));
-      wrap.appendChild(textPre("", turn.assistantContent));
-    }
-    return wrap;
-  }
-  function renderAgentRun(run, depth) {
+
+  function renderRun(run, depth) {
     var d = document.createElement("details");
     d.className = depth === 0 ? "run-root" : "";
-    if (depth === 0) d.open = true;
-    var agent = run.agentName != null ? String(run.agentName) : "Agent";
-    var du = durMs(run.startedAt, run.endedAt);
+    d.open = true;
+    var agent = run.agentName || "Agent";
+    var steps = run.steps || [];
+    var firstStart = steps.length ? steps[0].startedAt : null;
+    var lastEnd = steps.length ? steps[steps.length - 1].endedAt : null;
+    var du = durMs(firstStart, lastEnd);
     var sum = el("summary", null,
       esc(agent) +
-      (run.path ? '<span class="summary-meta">' + esc(run.path) + "</span>" : "") +
       (du ? '<span class="dur">' + esc(du) + "</span>" : "")
     );
     d.appendChild(sum);
     var body = el("div", { class: "details-body" });
-    if (run.path) {
-      var pl = el("div", { class: "path-line" });
-      pl.textContent = run.path;
-      body.appendChild(pl);
+    if (run.prompt) {
+      body.appendChild(el("div", { class: "block-label" }, "Prompt"));
+      body.appendChild(textPre("", run.prompt));
     }
-    var turns = run.turns;
-    if (turns && turns.length) {
-      body.appendChild(el("h2", null, "Trace"));
-      for (var t = 0; t < turns.length; t++) body.appendChild(renderTurn(turns[t], depth));
+    if (steps.length) {
+      body.appendChild(el("h2", null, "Steps"));
+      for (var i = 0; i < steps.length; i++) body.appendChild(renderStep(steps[i]));
     } else {
-      body.appendChild(el("div", { class: "empty" }, "No turns recorded."));
-    }
-    if (run.finalText) {
-      body.appendChild(el("h2", null, "Final output"));
-      body.appendChild(textPre("", run.finalText));
+      body.appendChild(el("div", { class: "empty" }, "No steps recorded."));
     }
     d.appendChild(body);
     return d;
   }
+
   function render(data) {
     var root = document.getElementById("root");
     root.innerHTML = "";
-    root.appendChild(el("h1", null, "Query log"));
+    root.appendChild(el("h1", null, "Agent Run"));
     var dl = el("dl", { class: "meta" });
     function row(dt, dd) {
       dl.appendChild(el("dt", null, dt));
-      var d = el("dd", null, esc(dd));
-      dl.appendChild(d);
+      dl.appendChild(el("dd", null, esc(dd)));
     }
-    if (data.queryId) row("Query ID", data.queryId);
-    if (data.sessionId) row("Session", data.sessionId);
-    if (data.startTime) row("Start", data.startTime);
-    if (data.endTime) row("End", data.endTime);
-    var total = durMs(data.startTime, data.endTime);
-    if (total) row("Duration", total);
+    if (data.agentName) row("Agent", data.agentName);
+    var steps = data.steps || [];
+    if (steps.length) {
+      row("Steps", String(steps.length));
+      var total = durMs(steps[0].startedAt, steps[steps.length - 1].endedAt);
+      if (total) row("Duration", total);
+    }
     root.appendChild(dl);
-    root.appendChild(el("h2", null, "User query"));
-    var qcard = el("div", { class: "card" });
-    qcard.appendChild(el("div", { class: "query" }, esc(data.userQuery || "")));
-    root.appendChild(qcard);
-    root.appendChild(el("h2", null, "Response"));
-    var rcard = el("div", { class: "card" });
-    rcard.appendChild(el("div", { class: "response" }, esc(data.response != null ? data.response : "")));
-    root.appendChild(rcard);
-    root.appendChild(el("h2", null, "Run"));
-    if (data.rootRun) {
-      root.appendChild(renderAgentRun(data.rootRun, 0));
-    } else {
-      root.appendChild(el("div", { class: "empty" }, "No root run."));
+    root.appendChild(el("h2", null, "Prompt"));
+    var pcard = el("div", { class: "card" });
+    pcard.appendChild(el("div", { class: "prompt" }, esc(data.prompt || "")));
+    root.appendChild(pcard);
+    // Find the final "complete" step result as the response
+    var finalResult = "";
+    for (var i = steps.length - 1; i >= 0; i--) {
+      if (steps[i].kind === "complete" && steps[i].result) {
+        finalResult = steps[i].result;
+        break;
+      }
     }
+    if (finalResult) {
+      root.appendChild(el("h2", null, "Response"));
+      var rcard = el("div", { class: "card" });
+      var resp = el("div", { style: "border-left: 3px solid #2563eb; padding-left: 0.75rem; white-space: pre-wrap; word-break: break-word;" });
+      resp.textContent = finalResult;
+      rcard.appendChild(resp);
+      root.appendChild(rcard);
+    }
+    root.appendChild(el("h2", null, "Run"));
+    root.appendChild(renderRun(data, 0));
   }
   try {
     var data = JSON.parse(decodeB64Utf8(PAYLOAD));
     render(data);
   } catch (e) {
     document.getElementById("root").innerHTML =
-      '<div class="card"><p class="err">Failed to load log: ' + esc(e.message) + "</p></div>";
+      '<div class="card"><p class="err">Failed to load: ' + esc(e.message) + "</p></div>";
   }
 })();
   </script>

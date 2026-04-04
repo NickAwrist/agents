@@ -1,7 +1,7 @@
 import { ComputerAgent } from "../agents/computer_agent";
 import { BaseTool } from "./BaseTool";
 import type { Tool } from "ollama";
-import type { ToolContext } from "../logger/trace";
+import type { RunContext } from "../RunContext";
 
 export class ComputerAgentTool extends BaseTool {
   constructor() {
@@ -29,13 +29,11 @@ export class ComputerAgentTool extends BaseTool {
     };
   }
 
-  override async execute(args: Record<string, unknown>, ctx?: ToolContext): Promise<string> {
+  override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
     const task = typeof args.task === "string" ? args.task : "";
     const computerAgent = new ComputerAgent();
-    if (ctx) {
-      const nestedRun = ctx.invocation.beginNestedAgent("ComputerAgent", ctx.observer);
-      return computerAgent.run(task, nestedRun);
-    }
-    return computerAgent.run(task);
+    const childCtx = ctx?.createChild("ComputerAgent", task);
+    return computerAgent.run(task, childCtx);
   }
 }
+

@@ -1,14 +1,6 @@
-import type { AgentRunLog, ToolContext, TurnLog } from "../logger/trace";
-import { ToolInvocationLog } from "../logger/trace";
+import type { RunContext } from "../RunContext";
 import type { BaseTool } from "../tools/BaseTool";
 import ollama, { type ChatResponse, type ToolCall } from "ollama";
-
-type ToolCallTraceCtx = {
-  runLog: AgentRunLog;
-  turn: TurnLog;
-  turnIndex: number;
-  toolCallIndex: number;
-};
 
 export class BaseAgent {
   model: string;
@@ -47,78 +39,20 @@ export class BaseAgent {
     }
   }
 
-  private async executeToolCall(toolCall: ToolCall, traceCtx?: ToolCallTraceCtx): Promise<string> {
+  private async executeToolCall(toolCall: ToolCall, ctx?: RunContext): Promise<string> {
     const toolName = toolCall.function.name;
     const args = this.parseToolArguments(toolCall.function.arguments);
 
-    let invocation: ToolInvocationLog | undefined;
-    let toolCtx: ToolContext | undefined;
-    let pathStr = "";
-
-    if (traceCtx) {
-      pathStr = `${traceCtx.runLog.path}/turn${traceCtx.turnIndex}/tool:${toolName}`;
-      invocation = new ToolInvocationLog({
-        originQueryId: traceCtx.runLog.queryId,
-        userQuery: traceCtx.runLog.userQuery,
-        path: pathStr,
-        turnIndex: traceCtx.turnIndex,
-        toolCallIndex: traceCtx.toolCallIndex,
-        toolName,
-        args,
-      });
-      traceCtx.turn.tools.push(invocation);
-      toolCtx = {
-        queryId: traceCtx.runLog.queryId,
-        userQuery: traceCtx.runLog.userQuery,
-        path: pathStr,
-        turnIndex: traceCtx.turnIndex,
-        toolCallIndex: traceCtx.toolCallIndex,
-        invocation,
-        observer: traceCtx.runLog.observer,
-      };
-      traceCtx.runLog.observer?.onToolCallStart?.({
-        queryId: traceCtx.runLog.queryId,
-        userQuery: traceCtx.runLog.userQuery,
-        path: pathStr,
-        turnIndex: traceCtx.turnIndex,
-        toolCallIndex: traceCtx.toolCallIndex,
-        toolName,
-        args,
-      });
-    }
-
-    const t0 = Date.now();
     const tool = this.TOOL_MAP[toolName];
     if (!tool) {
-      const err = "Error: tool " + toolName + " not found";
-      invocation?.end(err);
-      traceCtx?.runLog.observer?.onToolCallEnd?.({
-        path: pathStr,
-        toolName,
-        durationMs: Date.now() - t0,
-        resultPreview: err,
-        error: err,
-      });
-      return err;
+      return "Error: tool " + toolName + " not found";
     }
 
-    let result: string;
-    let execError: string | undefined;
     try {
-      result = await tool.execute(args, toolCtx);
+      return await tool.execute(args, ctx);
     } catch (e) {
-      execError = e instanceof Error ? e.message : String(e);
-      result = execError;
+      return e instanceof Error ? e.message : String(e);
     }
-    invocation?.end(result);
-    traceCtx?.runLog.observer?.onToolCallEnd?.({
-      path: pathStr,
-      toolName,
-      durationMs: Date.now() - t0,
-      resultPreview: result,
-      error: execError,
-    });
-    return result;
   }
 
   private parseToolArguments(raw: unknown): Record<string, unknown> {
@@ -139,15 +73,7 @@ export class BaseAgent {
     return {};
   }
 
-  async run(prompt: string, runLog?: AgentRunLog): Promise<string> {
-    runLog?.observer?.onAgentRunStart?.({
-      queryId: runLog.queryId,
-      userQuery: runLog.userQuery,
-      path: runLog.path,
-      agentName: runLog.agentName,
-      initialPrompt: prompt,
-    });
-
+  async run(prompt: string, ctx?: RunContext): Promise<string> {
     const systemMsg: { role: string; content: string } | undefined = this.systemPrompt
       ? { role: "system", content: this.systemPrompt }
       : undefined;
@@ -156,14 +82,7 @@ export class BaseAgent {
     let turnIndex = 0;
 
     do {
-      const turn = runLog?.startTurn(turnIndex, prompt);
-
-      runLog?.observer?.onAgentTurnStart?.({
-        queryId: runLog.queryId,
-        path: runLog.path,
-        turnIndex,
-        userInput: prompt,
-      });
+      ctx?.beginStep({ kind: "llm_call", turnIndex });
 
       response = await ollama.chat({
         model: this.model,
@@ -175,29 +94,29 @@ export class BaseAgent {
         tools: this.tools.map((tool) => tool.toTool()),
       });
 
-      turn?.recordAssistant(response.message.content ?? "", response.message.tool_calls);
-
-      const toolCallNames =
-        response.message.tool_calls?.map((c) => c.function.name) ?? [];
-      runLog?.observer?.onLlmResponse?.({
-        queryId: runLog.queryId,
-        path: runLog.path,
-        turnIndex,
-        content: response.message.content ?? "",
-        toolCallNames,
-      });
+      const content = response.message.content ?? "";
+      const toolCalls = response.message.tool_calls ?? [];
+      if (content) {
+        ctx?.endStep(content);
+      } else if (toolCalls.length) {
+        ctx?.endStep("→ " + toolCalls.map((c) => c.function.name).join(", "));
+      } else {
+        ctx?.endStep("");
+      }
 
       this.history.push({ role: "user", content: prompt });
 
       if (response.message.tool_calls?.length) {
         const toolResults: string[] = [];
-        let i = 0;
         for (const toolCall of response.message.tool_calls) {
-          const traceCtx =
-            runLog && turn ? { runLog, turn, turnIndex, toolCallIndex: i } : undefined;
-          const result = await this.executeToolCall(toolCall, traceCtx);
-          toolResults.push(`Result from tool call ${toolCall.function.name}: ${result}`);
-          i++;
+          const toolName = toolCall.function.name;
+          const args = this.parseToolArguments(toolCall.function.arguments);
+
+          ctx?.beginStep({ kind: "tool_call", turnIndex, toolName, args });
+          const result = await this.executeToolCall(toolCall, ctx);
+          ctx?.endStep(result);
+
+          toolResults.push(`Result from tool call ${toolName}: ${result}`);
         }
         prompt = toolResults.join("\n");
         turnIndex++;
@@ -206,13 +125,10 @@ export class BaseAgent {
 
     this.history.push({ role: "assistant", content: response.message.content });
     const finalText = response.message.content ?? "";
-    runLog?.complete(finalText);
-    runLog?.observer?.onAgentRunEnd?.({
-      queryId: runLog.queryId,
-      path: runLog.path,
-      agentName: runLog.agentName,
-      finalTextPreview: finalText,
-    });
+
+    ctx?.beginStep({ kind: "complete", turnIndex });
+    ctx?.endStep(finalText);
+
     return finalText;
   }
 }
