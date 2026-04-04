@@ -1,3 +1,5 @@
+import { AgentLog } from "../logger/AgentLog";
+import { ToolLog } from "../logger/ToolLog";
 import type { BaseTool } from "../tools/BaseTool";
 import ollama, { type ChatResponse, type ToolCall } from "ollama";
 
@@ -39,16 +41,17 @@ export class BaseAgent {
     }
   }
 
-  private async executeToolCall(toolCall: ToolCall): Promise<string> {
+  private async executeToolCall(toolCall: ToolCall): Promise<ToolLog> {
+    const toolLog = new ToolLog(toolCall.function.name);
     let toolName = toolCall.function.name;
     const tool = this.TOOL_MAP[toolName];
     if (!tool) {
-      return 'Error: tool ' + toolName + ' not found';
+      toolLog.end('Error: tool ' + toolName + ' not found');
+      return toolLog;
     }
-    console.log(`[DEBUG-${this.name}]: Executing tool ${toolName}`);
     const result = await tool.execute(this.parseToolArguments(toolCall.function.arguments));
-    console.log(`[DEBUG-${this.name}]: Tool result: ${result}`);
-    return result;
+    toolLog.end(result);
+    return toolLog;
   }
 
   private parseToolArguments(raw: unknown): Record<string, unknown> {
@@ -69,7 +72,9 @@ export class BaseAgent {
     return {};
   }
 
-  async run(prompt: string): Promise<string> {
+  async run(prompt: string): Promise<AgentLog> {
+    const agentLog = new AgentLog(this.name, prompt);
+
     var systemPrompt: { role: string; content: string } | undefined;
     if (this.systemPrompt) {
       systemPrompt = { role: 'system', content: this.systemPrompt };
@@ -77,8 +82,6 @@ export class BaseAgent {
       
     let response: ChatResponse;
     do {
-      console.log(`[DEBUG-${this.name}]: Running agent with prompt: ${prompt}`);
-
       response = await ollama.chat({
         model: this.model,
         messages: [
@@ -88,20 +91,25 @@ export class BaseAgent {
         ],
         tools: this.tools.map(tool => tool.toTool()),
       });
+      
       this.history.push({ role: 'user', content: prompt });
+
       if (response.message.tool_calls) {
         console.log(`[DEBUG-${this.name}]: Tool calls: ${JSON.stringify(response.message.tool_calls, null, 2)}`);
         
         var toolResults: { role: string; content: string }[] = [];
         for (const toolCall of response.message.tool_calls) {
-          const result = await this.executeToolCall(toolCall);
-          toolResults.push({ role: 'assistant', content: `Result from tool call ${toolCall.function.name}: ${result}` });
+          const toolLog = await this.executeToolCall(toolCall);
+          agentLog.addToolLog(toolLog);
+          toolResults.push({ role: 'assistant', content: `Result from tool call ${toolCall.function.name}: ${toolLog.getResult()}` });
         }
         prompt = toolResults.map(result => result.content).join('\n');
       }
     } while(response.message.tool_calls);
 
     this.history.push({ role: 'assistant', content: response.message.content });
-    return response.message.content;
+
+    agentLog.end(response.message.content, this.history);
+    return agentLog;
   }
 }

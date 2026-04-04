@@ -1,4 +1,5 @@
 import { ComputerAgent } from "../agents/computer_agent";
+import { AgentLog } from "../logger/AgentLog";
 import { BaseTool } from "./BaseTool";
 import type { Tool } from "ollama";
 
@@ -27,6 +28,6 @@ export class ComputerAgentTool extends BaseTool {
   override async execute(args: Record<string, unknown>): Promise<string> {
     const computerAgent = new ComputerAgent();
     const result = await computerAgent.run(args.task as string);
-    return result;
+    return result.getResponse();
   }
 }
