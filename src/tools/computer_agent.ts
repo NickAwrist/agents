@@ -20,7 +20,7 @@ export class ComputerAgentTool extends BaseTool {
             task: {
               type: "string",
               description:
-                "The overall task to perform. This should be a detailed description of the task to perform.",
+                "The overall task to perform. The task should be a short but detailed description of the task to perform.",
             },
           },
           required: ["task"],

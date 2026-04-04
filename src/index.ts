@@ -8,8 +8,15 @@ import { SessionLog } from "./logger/SessionLog";
 const EXIT_COMMANDS = new Set(["/bye", "/quit", "/exit"]);
 const PROMPT = "\n[You]: ";
 
-function wantConsoleRuntime(): boolean {
-  return process.env.AGENT_RUNTIME_LOG !== "0";
+function parseCliArgs(argv: string[]): { debug: boolean } {
+  const debug = argv.includes("--debug");
+  return { debug };
+}
+
+const cli = parseCliArgs(process.argv);
+
+function wantConsoleRuntime(debug: boolean): boolean {
+  return debug && process.env.AGENT_RUNTIME_LOG !== "0";
 }
 
 function wantStreamFile(): boolean {
@@ -18,7 +25,7 @@ function wantStreamFile(): boolean {
 
 async function main(): Promise<void> {
   console.log(
-    `[Type /bye, /quit, or /exit to quit] · final JSON → ${getDefaultQueryLogDir()}/*.json · live stream → same folder/*.stream.ndjson (AGENT_RUNTIME_STREAM_LOG=0 disables)`,
+    `[Type /bye, /quit, or /exit to quit] · final log → ${getDefaultQueryLogDir()}/*.json + *.html · live stream → same folder/*.stream.ndjson (AGENT_RUNTIME_STREAM_LOG=0 disables)${cli.debug ? "" : " · pass --debug for console trace ([runtime]/[trace])"}`,
   );
 
   const generalAgent = new GeneralAgent();
@@ -35,12 +42,12 @@ async function main(): Promise<void> {
     session.addQueryLog(queryLog);
 
     const stream = wantStreamFile() ? createStreamingFileRuntimeObserver(queryLog.queryId) : null;
-    const consoleObs = wantConsoleRuntime() ? createConsoleRuntimeObserver() : undefined;
+    const consoleObs = wantConsoleRuntime(cli.debug) ? createConsoleRuntimeObserver() : undefined;
     const runtimeObserver = stream
       ? composeRuntimeObservers(stream.observer, consoleObs)
       : consoleObs;
 
-    if (stream) {
+    if (cli.debug && stream) {
       console.log(`[trace] live stream → ${stream.streamPath}`);
     }
 
@@ -56,8 +63,11 @@ async function main(): Promise<void> {
       console.error("\n[GeneralAgent error]", err);
     } finally {
       try {
-        const jsonPath = await persistQueryLog(queryLog);
-        console.log(`[trace] final JSON → ${jsonPath}`);
+        const { jsonPath, htmlPath } = await persistQueryLog(queryLog);
+        if (cli.debug) {
+          console.log(`[trace] final JSON → ${jsonPath}`);
+          console.log(`[trace] log viewer → ${htmlPath}`);
+        }
       } catch (e) {
         console.error("[trace] JSON write failed:", e);
       }
