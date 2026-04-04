@@ -1,0 +1,1 @@
+Very basic setup for local AI agent. Playground
