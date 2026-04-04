@@ -1,13 +1,12 @@
 import { QueryLog } from "./QueryLog";
 
 export class SessionLog {
-  private sessionId = crypto.randomUUID();
-  private queryLogs: QueryLog[] = [];
-  private startTime: Date;
+  readonly sessionId: string;
+  private readonly queryLogs: QueryLog[] = [];
+  private readonly startTime: Date;
 
   constructor() {
     this.sessionId = crypto.randomUUID();
-    this.queryLogs = [];
     this.startTime = new Date();
   }
 
@@ -21,5 +20,13 @@ export class SessionLog {
 
   getSessionId(): string {
     return this.sessionId;
+  }
+
+  toJSON(maxResultChars?: number): Record<string, unknown> {
+    return {
+      sessionId: this.sessionId,
+      startTime: this.startTime.toISOString(),
+      queries: this.queryLogs.map((q) => q.toJSON(maxResultChars)),
+    };
   }
 }
