@@ -143,6 +143,7 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
       overflow-x: auto;
     }
     .pre.dark { background: #1e1e24; color: #e8e8ed; border-color: #2a2a32; }
+    .pre.thinking { background: #f5f0ff; color: #2e1065; border-color: #c4b5fd; font-style: italic; }
     .step { margin-bottom: 0.5rem; }
     .step > summary { background: #f5f5f0; }
     .step[open] > summary { border-bottom: 1px solid var(--border); }
@@ -226,6 +227,10 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
     if (step.args && Object.keys(step.args).length > 0) {
       body.appendChild(el("div", { class: "block-label" }, "Arguments"));
       body.appendChild(textPre("dark", JSON.stringify(step.args, null, 2)));
+    }
+    if (step.thinking != null && step.thinking !== "") {
+      body.appendChild(el("div", { class: "block-label" }, "Thinking"));
+      body.appendChild(textPre("thinking", step.thinking));
     }
     if (step.result != null && step.result !== "") {
       body.appendChild(el("div", { class: "block-label" }, "Result"));

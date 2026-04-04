@@ -92,16 +92,18 @@ export class BaseAgent {
           { role: "user", content: prompt },
         ],
         tools: this.tools.map((tool) => tool.toTool()),
+        think: true,
       });
 
       const content = response.message.content ?? "";
+      const thinking = response.message.thinking ?? "";
       const toolCalls = response.message.tool_calls ?? [];
       if (content) {
-        ctx?.endStep(content);
+        ctx?.endStep(content, thinking || undefined);
       } else if (toolCalls.length) {
-        ctx?.endStep("→ " + toolCalls.map((c) => c.function.name).join(", "));
+        ctx?.endStep("→ " + toolCalls.map((c) => c.function.name).join(", "), thinking || undefined);
       } else {
-        ctx?.endStep("");
+        ctx?.endStep("", thinking || undefined);
       }
 
       this.history.push({ role: "user", content: prompt });
@@ -125,9 +127,10 @@ export class BaseAgent {
 
     this.history.push({ role: "assistant", content: response.message.content });
     const finalText = response.message.content ?? "";
+    const finalThinking = response.message.thinking ?? "";
 
     ctx?.beginStep({ kind: "complete", turnIndex });
-    ctx?.endStep(finalText);
+    ctx?.endStep(finalText, finalThinking || undefined);
 
     return finalText;
   }

@@ -7,6 +7,7 @@ export type Step = {
   toolName?: string;
   args?: Record<string, unknown>;
   result?: string;
+  thinking?: string;
   error?: string;
   startedAt: string;
   endedAt?: string;
@@ -48,11 +49,12 @@ export class RunContext {
   }
 
   /** End the current (last running) step with a result. Fires onChange. */
-  endStep(result: string): void {
+  endStep(result: string, thinking?: string): void {
     const step = this._lastRunning();
     if (!step) return;
     step.status = "done";
     step.result = result;
+    if (thinking) step.thinking = thinking;
     step.endedAt = new Date().toISOString();
     this._onChange?.(this, step);
   }
@@ -115,6 +117,7 @@ export class RunContext {
     if (step.toolName) out.toolName = step.toolName;
     if (step.args) out.args = step.args;
     if (step.result !== undefined) out.result = step.result;
+    if (step.thinking !== undefined) out.thinking = step.thinking;
     if (step.error !== undefined) out.error = step.error;
     if (step.childContext) out.childRun = step.childContext.snapshot();
     return out;
