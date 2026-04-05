@@ -1,6 +1,6 @@
 import type { RunContext } from "../RunContext";
 import type { BaseTool } from "../tools/BaseTool";
-import ollama, { type ChatResponse, type ToolCall } from "ollama";
+import ollama, { type ChatResponse, type Tool, type ToolCall } from "ollama";
 import { Plan } from "../Plan";
 
 export class BaseAgent {
@@ -78,6 +78,7 @@ export class BaseAgent {
   }
 
   async run(prompt: string, ctx?: RunContext): Promise<string> {
+    // System prompt building
     const systemMsg: { role: string; content: string } | undefined = this.systemPrompt
       ? { role: "system", content: this.systemPrompt }
       : undefined;
@@ -88,6 +89,7 @@ export class BaseAgent {
     do {
       ctx?.beginStep({ kind: "llm_call", turnIndex });
 
+      // Create message history by appending history after system prompt, then user prompt
       const messages = [
         systemMsg || { role: "system", content: "" },
         ...this.history,
@@ -96,6 +98,7 @@ export class BaseAgent {
         messages.push({ role: "user", content: prompt });
       }
 
+      // Call ollama 
       response = await ollama.chat({
         model: this.model,
         messages,
@@ -103,6 +106,7 @@ export class BaseAgent {
         think: true,
       });
 
+      // Extract content, thinking, and tool calls from response
       const content = response.message.content ?? "";
       const thinking = response.message.thinking ?? "";
       const toolCalls = response.message.tool_calls ?? [];
@@ -117,32 +121,40 @@ export class BaseAgent {
         ctx?.endStep("", thinking || undefined);
       }
 
+      // Add user prompt to history
       if (prompt) {
         this.history.push({ role: "user", content: prompt });
         prompt = "";
       }
 
+      // Add assistant message to history
       const assistantMsg: any = { role: "assistant", content: response.message.content || "" };
       if (response.message.tool_calls && response.message.tool_calls.length > 0) {
         assistantMsg.tool_calls = response.message.tool_calls;
       }
       this.history.push(assistantMsg);
 
+      // Execute tool calls
       if (response.message.tool_calls?.length) {
         for (const toolCall of response.message.tool_calls) {
+          // Extract tool name and arguments
           const toolName = toolCall.function.name;
           const args = this.parseToolArguments(toolCall.function.arguments);
 
+          // Begin tool call step
           ctx?.beginStep({ kind: "tool_call", turnIndex, toolName, args });
           const result = await this.executeToolCall(toolCall, ctx);
           ctx?.endStep(result);
 
+          // Add tool call to history
           this.history.push({ role: "tool", content: result });
         }
         prompt = "";
         turnIndex++;
       }
     } while (response.message.tool_calls?.length);
+
+    // Extract final content and thinking
     const finalText = response.message.content ?? "";
     const finalThinking = response.message.thinking ?? "";
 

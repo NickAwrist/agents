@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "node:url";
-import { GeneralAgent } from "./agents/general_agent";
+import { agentManager } from "./agents/agentManager";
 import { RunContext } from "./RunContext";
 import { buildRunViewerHtml } from "./runViewerHtml";
 import ollama from "ollama";
@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   }
   console.log("[Type /bye, /quit, or /exit to quit]");
 
-  const generalAgent = new GeneralAgent();
+  const generalAgent = agentManager.createAgent("general_agent");
 
   process.stdout.write(PROMPT);
   for await (const line of console) {

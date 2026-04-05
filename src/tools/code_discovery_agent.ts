@@ -1,4 +1,4 @@
-import { CodeDiscoveryAgent } from "../agents/code_discovery_agent";
+import { agentManager } from "../agents/agentManager";
 import { BaseTool } from "./BaseTool";
 import type { Tool } from "ollama";
 import type { RunContext } from "../RunContext";
@@ -42,7 +42,7 @@ export class CodeDiscoveryAgentTool extends BaseTool {
         : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
-    const codeDiscoveryAgent = new CodeDiscoveryAgent();
+    const codeDiscoveryAgent = agentManager.createAgent("code_discovery_agent");
     // Providing a recognizable child context name
     const childCtx = ctx?.createChild(codeDiscoveryAgent, task);
     return codeDiscoveryAgent.run(task, childCtx);

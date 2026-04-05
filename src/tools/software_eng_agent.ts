@@ -1,4 +1,4 @@
-import { SoftwareEngAgent } from "../agents/software_eng_agent";
+import { agentManager } from "../agents/agentManager";
 import { BaseTool } from "./BaseTool";
 import type { Tool } from "ollama";
 import type { RunContext } from "../RunContext";
@@ -42,7 +42,7 @@ export class SoftwareEngAgentTool extends BaseTool {
         : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
-    const softwareEngAgent = new SoftwareEngAgent();
+    const softwareEngAgent = agentManager.createAgent("coding_agent");
     // Providing a recognizable child context name
     const childCtx = ctx?.createChild(softwareEngAgent, task);
     return softwareEngAgent.run(task, childCtx);
