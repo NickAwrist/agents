@@ -33,8 +33,8 @@ export function ChatArea({
       <div className="chat-main-panel">
         <div className="chat-main-panel__intro">
           <div>
-            <div className="chat-main-panel__eyebrow">Conversation</div>
-            <h2>{sessionPreview || "Ask directly. Inspect everything."}</h2>
+            <div className="chat-main-panel__eyebrow">Topic</div>
+            <h2>{sessionPreview || "Message the agent below."}</h2>
           </div>
         </div>
 
@@ -55,28 +55,20 @@ export function ChatArea({
               />
             ))}
 
-            {streamingSteps.length > 0 && (
-              <div className="live-run-card">
-                <div className="live-run-card__header">
-                  <div className="live-run-card__title">Run in progress</div>
-                  <button className="secondary-button secondary-button--small" onClick={() => onViewSteps("live")}>
-                    View steps
-                  </button>
-                </div>
-                <div className="live-run-card__body">
-                  <span>{streamingSteps.length} internal step{streamingSteps.length !== 1 ? "s" : ""} captured so far</span>
+            {(streamingStep || streamingSteps.length > 0) && (
+              <div className="working-row working-row--streaming">
+                <div className="working-row__main">
+                  <div className="working-row__spinner" aria-hidden />
+                  <span className="working-row__label">
+                    {streamingStep ? "Thinking…" : `Running · ${streamingSteps.length} step${streamingSteps.length !== 1 ? "s" : ""}`}
+                  </span>
                   {streamingStep?.toolName && <span className="tool-pill">{streamingStep.toolName}</span>}
                 </div>
-              </div>
-            )}
-
-            {streamingStep && (
-              <div className="working-row">
-                <div className="working-row__spinner" />
-                <div className="working-row__copy">
-                  <span>Agent is working through the current run.</span>
-                  {streamingStep.toolName && <span className="tool-pill">{streamingStep.toolName}</span>}
-                </div>
+                {streamingSteps.length > 0 && (
+                  <button type="button" className="secondary-button secondary-button--small" onClick={() => onViewSteps("live")}>
+                    Steps
+                  </button>
+                )}
               </div>
             )}
 
@@ -101,7 +93,7 @@ export function ChatArea({
                   onSendMessage(e);
                 }
               }}
-              placeholder="Message agent..."
+              placeholder="Send a message…"
               className="composer-input"
               rows={1}
             />

@@ -22,4 +22,7 @@ export interface Message {
 export interface DebugData {
   systemPrompt: string;
   history: Message[];
+  customTitle?: string | null;
+  /** Cumulative Ollama `messages` (excludes system); next turn prepends system and appends the new user message. */
+  modelMessages?: Array<Record<string, unknown>>;
 }

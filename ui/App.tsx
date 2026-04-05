@@ -1,16 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bot,
   Bug,
   Menu,
+  MessageSquarePlus,
   Plus,
+  Sparkles,
   X,
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
 import { StepsModal } from "./components/StepsModal";
 import { DebugModal } from "./components/DebugModal";
+import { RenameSessionModal } from "./components/RenameSessionModal";
 import type { SessionSummary, Message, MessageStep, DebugData } from "./types";
+import {
+  loadChatsV1,
+  removeStoredSession,
+  restoreAllToServer,
+  upsertStoredSession,
+} from "./persist/chats";
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -25,19 +34,52 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
+  const debugOpenRef = useRef(false);
+  debugOpenRef.current = debugOpen;
 
-  const fetchSessions = async () => {
+  const fetchSessions = async (): Promise<SessionSummary[]> => {
     try {
       const res = await fetch("/api/sessions");
       const data = await res.json();
-      setSessions(data.sessions || []);
+      const list = data.sessions || [];
+      setSessions(list);
+      return list;
     } catch (e) {
       console.error("Failed to load sessions", e);
+      return [];
     }
   };
 
   useEffect(() => {
-    fetchSessions();
+    let cancelled = false;
+    (async () => {
+      await restoreAllToServer(loadChatsV1());
+      if (cancelled) return;
+      const list = await fetchSessions();
+      if (cancelled) return;
+      const storedIds = new Set(loadChatsV1().map((s) => s.id));
+      for (const s of list) {
+        if (storedIds.has(s.id)) continue;
+        try {
+          const dRes = await fetch(`/api/sessions/${encodeURIComponent(s.id)}`);
+          const d = await dRes.json();
+          upsertStoredSession({
+            id: s.id,
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt,
+            history: d.history || [],
+            modelMessages: d.modelMessages,
+            customTitle: d.customTitle ?? null,
+          });
+        } catch (e) {
+          console.error("Failed to pull session into local storage", s.id, e);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const createSession = async () => {
@@ -45,6 +87,13 @@ export default function App() {
     try {
       const res = await fetch("/api/sessions", { method: "POST" });
       const data = await res.json();
+      upsertStoredSession({
+        id: data.sessionId,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        history: [],
+        customTitle: null,
+      });
       await fetchSessions();
       await loadSession(data.sessionId);
       setSidebarOpen(false);
@@ -66,6 +115,15 @@ export default function App() {
       if (data.history) {
         setMessages(data.history);
       }
+      const prev = loadChatsV1().find((s) => s.id === id);
+      upsertStoredSession({
+        id,
+        createdAt: prev?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+        history: data.history || [],
+        modelMessages: data.modelMessages,
+        customTitle: data.customTitle ?? prev?.customTitle ?? null,
+      });
     } catch (e) {
       console.error("Failed to load session history", e);
     }
@@ -85,6 +143,21 @@ export default function App() {
         setStreamingSteps([]);
         setMessages((prev) => [...prev, { role: "assistant", content: data.result, steps: data.steps }]);
         fetchSessions();
+        if (activeSessionId) {
+          fetch(`/api/sessions/${encodeURIComponent(activeSessionId)}`)
+            .then((r) => r.json())
+            .then((detail) => {
+              upsertStoredSession({
+                id: activeSessionId,
+                history: detail.history || [],
+                modelMessages: detail.modelMessages,
+                customTitle: detail.customTitle ?? null,
+                updatedAt: Date.now(),
+              });
+            })
+            .catch((err) => console.error("Persist chat after turn failed", err));
+        }
+        if (debugOpenRef.current) fetchDebugData(activeSessionId);
       }
     };
 
@@ -104,7 +177,9 @@ export default function App() {
 
     const msg = input.trim();
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: msg }]);
+    const nextHistory = [...messages, { role: "user" as const, content: msg }];
+    setMessages(nextHistory);
+    upsertStoredSession({ id: activeSessionId, history: nextHistory, updatedAt: Date.now() });
 
     await fetch(`/api/sessions/${activeSessionId}/chat`, {
       method: "POST",
@@ -129,8 +204,56 @@ export default function App() {
     setDebugOpen(!debugOpen);
   };
 
+  const deleteSession = async (id: string) => {
+    if (!confirm("Delete this chat? This cannot be undone.")) return;
+    const enc = encodeURIComponent(id);
+    try {
+      const res = await fetch(`/api/sessions/${enc}/delete`, { method: "POST" });
+      const gone = res.status === 404;
+      if (!res.ok && !gone) {
+        console.error("Delete failed", res.status);
+        await fetchSessions();
+        return;
+      }
+      if (activeSessionId === id) {
+        setActiveSessionId(null);
+        setMessages([]);
+        setDebugOpen(false);
+        setDebugData(null);
+      }
+      removeStoredSession(id);
+      await fetchSessions();
+    } catch (e) {
+      console.error("Failed to delete session", e);
+      await fetchSessions();
+    }
+  };
+
+  const saveSessionTitle = async (title: string) => {
+    if (!renameSessionId) return;
+    const id = renameSessionId;
+    try {
+      const res = await fetch(`/api/sessions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayTitle: title.length > 0 ? title : null }),
+      });
+      if (!res.ok) return;
+      upsertStoredSession({
+        id,
+        customTitle: title.trim().length > 0 ? title.trim() : null,
+        updatedAt: Date.now(),
+      });
+      setRenameSessionId(null);
+      await fetchSessions();
+    } catch (e) {
+      console.error("Failed to rename session", e);
+    }
+  };
+
   const modalSteps = stepsModalData === "live" ? streamingSteps : stepsModalData;
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  const renameTarget = renameSessionId ? sessions.find((s) => s.id === renameSessionId) : null;
 
   return (
     <div className="app-shell">
@@ -152,6 +275,8 @@ export default function App() {
               loadSession(id);
             }}
             onNewSession={createSession}
+            onRenameSession={(id) => setRenameSessionId(id)}
+            onDeleteSession={deleteSession}
             isLoading={isLoading}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
@@ -168,18 +293,17 @@ export default function App() {
               </button>
 
               <div className="workspace-title">
-                <div className="workspace-title__eyebrow">Agent Console</div>
                 {activeSessionId ? (
                   <div className="workspace-title__row">
-                    <h1>Session</h1>
-                    <span className="session-chip">
-                      <Bot size={14} />
-                      {activeSessionId.slice(0, 12)}
+                    <h1>Chat</h1>
+                    <span className="session-chip" title={activeSessionId}>
+                      <Bot size={12} />
+                      {activeSessionId.length > 12 ? `${activeSessionId.slice(0, 12)}…` : activeSessionId}
                     </span>
                   </div>
                 ) : (
                   <div className="workspace-title__row">
-                    <h1>Sessions</h1>
+                    <h1>Home</h1>
                   </div>
                 )}
               </div>
@@ -187,13 +311,13 @@ export default function App() {
 
             <div className="workspace-header__right">
               {activeSessionId && (
-                <button onClick={toggleDebug} className="icon-button" title="Open debug inspector">
+                <button type="button" onClick={toggleDebug} className="icon-button" title="Debug" aria-pressed={debugOpen}>
                   {debugOpen ? <X size={18} /> : <Bug size={18} />}
                 </button>
               )}
-              <button onClick={createSession} disabled={isLoading} className="primary-button">
-                <Plus size={16} />
-                New Session
+              <button type="button" onClick={createSession} disabled={isLoading} className="primary-button">
+                <Plus size={15} />
+                New chat
               </button>
             </div>
           </header>
@@ -211,28 +335,35 @@ export default function App() {
                 sessionPreview={activeSession?.preview ?? ""}
               />
             ) : (
-              <div className="empty-state">
-                <div className="empty-state__panel">
-                  <div className="empty-state__eyebrow">Agent Console</div>
-                  <h2>No session selected.</h2>
-                  <p>Create a fresh run or pick one from history. The workspace stays focused until you actually open a conversation.</p>
-                  <div className="empty-state__details">
-                    <div className="empty-state__detail">
-                      <span className="empty-state__detail-value">{sessions.length}</span>
-                      <span className="empty-state__detail-label">saved session{sessions.length === 1 ? "" : "s"}</span>
-                    </div>
-                    <div className="empty-state__detail">
-                      <span className="empty-state__detail-value">Debug</span>
-                      <span className="empty-state__detail-label">available once a session is open</span>
-                    </div>
+              <div className="empty-state empty-state--home">
+                <div className="empty-state__hero">
+                  <div className="empty-state__icon-wrap" aria-hidden>
+                    <Sparkles size={22} className="empty-state__icon" />
                   </div>
-                  <div className="empty-state__actions">
-                    <button onClick={createSession} disabled={isLoading} className="primary-button">
-                      <Plus size={16} />
-                      New Session
-                    </button>
-                  </div>
+                  <h2 className="empty-state__headline">Pick a chat or start fresh</h2>
+                  <p className="empty-state__lede">
+                    Your conversations live in the sidebar. Open one to continue, or create a new thread for a clean run.
+                  </p>
+                  <button type="button" onClick={createSession} disabled={isLoading} className="primary-button empty-state__cta">
+                    <MessageSquarePlus size={16} />
+                    New chat
+                  </button>
                 </div>
+                {sessions.length > 0 && (
+                  <div className="empty-state__recent">
+                    <div className="empty-state__recent-label">Recent</div>
+                    <ul className="empty-state__recent-list">
+                      {sessions.slice(0, 5).map((s) => (
+                        <li key={s.id}>
+                          <button type="button" className="empty-state__recent-item" onClick={() => loadSession(s.id)}>
+                            <span className="empty-state__recent-title">{s.preview || "Chat"}</span>
+                            <span className="empty-state__recent-time">{new Date(s.updatedAt).toLocaleDateString()}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -241,6 +372,13 @@ export default function App() {
 
       {debugOpen && <DebugModal data={debugData} onClose={() => setDebugOpen(false)} />}
       {modalSteps && modalSteps.length > 0 && <StepsModal steps={modalSteps} onClose={() => setStepsModalData(null)} />}
+      {renameSessionId && (
+        <RenameSessionModal
+          initialTitle={renameTarget?.preview ?? ""}
+          onSave={saveSessionTitle}
+          onClose={() => setRenameSessionId(null)}
+        />
+      )}
     </div>
   );
 }

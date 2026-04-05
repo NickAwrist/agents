@@ -1,5 +1,6 @@
-import { Bot, User, Waypoints } from "lucide-react";
+import { Bot, Waypoints } from "lucide-react";
 import type { Message } from "../types";
+import { MarkdownMessage } from "./MarkdownMessage";
 
 export function MessageItem({
   message,
@@ -11,8 +12,8 @@ export function MessageItem({
   if (message.role === "user") {
     return (
       <div className="message-row message-row--user">
-        <div className="message-bubble message-bubble--user">
-          <div className="message-bubble__content">{message.content}</div>
+        <div className="message-block message-block--user">
+          <MarkdownMessage className="message-markdown--user">{message.content}</MarkdownMessage>
         </div>
       </div>
     );
@@ -20,19 +21,19 @@ export function MessageItem({
 
   return (
     <div className="message-row message-row--assistant">
-      <div className="message-avatar">
-        <Bot size={16} />
+      <div className="message-avatar" aria-hidden>
+        <Bot size={14} />
       </div>
-      <div className="message-bubble message-bubble--assistant">
-        <div className="message-bubble__meta">
-          <span>Agent</span>
+      <div className="message-block message-block--assistant">
+        <div className="message-block__meta">
+          <span>Assistant</span>
         </div>
-        <div className="message-bubble__content message-bubble__content--assistant">{message.content}</div>
+        <MarkdownMessage className="message-markdown--assistant">{message.content}</MarkdownMessage>
 
         {message.steps && message.steps.length > 0 && onViewSteps && (
-          <button onClick={onViewSteps} className="trace-button">
-            <Waypoints size={14} />
-            View internal trace
+          <button type="button" onClick={onViewSteps} className="trace-button">
+            <Waypoints size={13} />
+            View trace
           </button>
         )}
       </div>
