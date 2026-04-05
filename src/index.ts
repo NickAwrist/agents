@@ -31,7 +31,7 @@ async function main(): Promise<void> {
       break;
     }
 
-    const ctx = new RunContext("GeneralAgent", line, (ctx, step) => {
+    const ctx = new RunContext(generalAgent, line, (ctx, step) => {
       const tag = `[${ctx.agentName}]`;
       const tool = step.toolName ? ` tool=${step.toolName}` : "";
       console.log(`${tag} step ${step.kind} ${step.status}${tool} (turn ${step.turnIndex})`);

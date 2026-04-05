@@ -3,6 +3,8 @@ import { BaseAgent } from "./BaseAgent";
 import { CreateFileTool } from "../tools/create_file";
 import { ReadFileTool } from "../tools/read_file";
 import { RunTscTool } from "../tools/run_tsc";
+import { ModifyPlan } from "../tools/modify_plan";
+import { GrepTool } from "../tools/grep";
 
 export class SoftwareEngAgent extends BaseAgent {
   constructor() {
@@ -15,7 +17,7 @@ export class SoftwareEngAgent extends BaseAgent {
   }
 
   private initTools(): void {
-    this.addTools([new ListFilesTool(), new CreateFileTool(), new ReadFileTool(), new RunTscTool()]);
+    this.addTools([new ListFilesTool(), new CreateFileTool(), new ReadFileTool(), new RunTscTool(), new ModifyPlan(), new GrepTool()]);
   }
 
   private initSystemPrompt(): void {

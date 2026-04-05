@@ -1,6 +1,7 @@
 import type { RunContext } from "../RunContext";
 import type { BaseTool } from "../tools/BaseTool";
 import ollama, { type ChatResponse, type ToolCall } from "ollama";
+import { Plan } from "../Plan";
 
 export class BaseAgent {
   model: string;
@@ -11,6 +12,8 @@ export class BaseAgent {
   history: Array<{ role: string; content: string }>;
 
   TOOL_MAP: Record<string, BaseTool>;
+
+  plan?: Plan;
 
   constructor(name: string, description: string, tools?: BaseTool[], model?: string, systemPrompt?: string) {
     this.name = name;

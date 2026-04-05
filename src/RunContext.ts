@@ -1,3 +1,5 @@
+import type { BaseAgent } from "./agents/BaseAgent";
+
 export type StepStatus = "running" | "done" | "error";
 
 export type Step = {
@@ -17,13 +19,15 @@ export type Step = {
 export type OnStepChange = (ctx: RunContext, step: Step) => void;
 
 export class RunContext {
+  agentInstance: BaseAgent;
   readonly agentName: string;
   readonly prompt: string;
   private _steps: Step[] = [];
   private _onChange?: OnStepChange;
 
-  constructor(agentName: string, prompt: string, onChange?: OnStepChange) {
-    this.agentName = agentName;
+  constructor(agentInstance: BaseAgent, prompt: string, onChange?: OnStepChange) {
+    this.agentInstance = agentInstance;
+    this.agentName = agentInstance.name;
     this.prompt = prompt;
     this._onChange = onChange;
   }
@@ -70,8 +74,8 @@ export class RunContext {
   }
 
   /** Create a child RunContext for a nested agent, attached to the current step. */
-  createChild(agentName: string, prompt: string): RunContext {
-    const child = new RunContext(agentName, prompt, this._onChange);
+  createChild(agentInstance: BaseAgent, prompt: string): RunContext {
+    const child = new RunContext(agentInstance, prompt, this._onChange);
     const step = this._lastRunning();
     if (step) {
       step.childContext = child;

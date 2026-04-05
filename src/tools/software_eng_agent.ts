@@ -5,7 +5,7 @@ import type { RunContext } from "../RunContext";
 
 export class SoftwareEngAgentTool extends BaseTool {
   constructor() {
-    super("software_eng_agent", "Call a software engineering agent to perform a complex programming or code-related task");
+    super("software_eng_agent", "Call a software engineering agent to perform a complex programming or code-related task. It will be responsible for coming up with the necessary steps as well as the implementation.");
   }
 
   override toTool(): Tool {
@@ -35,8 +35,8 @@ export class SoftwareEngAgentTool extends BaseTool {
   }
 
   override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
-    const task = typeof args.task === "string" 
-      ? args.task 
+    const task = typeof args.task === "string"
+      ? args.task
       : Array.isArray(args.task_lines)
         ? args.task_lines.join("\n")
         : "";
@@ -44,7 +44,7 @@ export class SoftwareEngAgentTool extends BaseTool {
 
     const softwareEngAgent = new SoftwareEngAgent();
     // Providing a recognizable child context name
-    const childCtx = ctx?.createChild("SoftwareEngAgent", task);
+    const childCtx = ctx?.createChild(softwareEngAgent, task);
     return softwareEngAgent.run(task, childCtx);
   }
 }

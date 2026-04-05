@@ -35,15 +35,15 @@ export class ComputerAgentTool extends BaseTool {
   }
 
   override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
-    const task = typeof args.task === "string" 
-      ? args.task 
+    const task = typeof args.task === "string"
+      ? args.task
       : Array.isArray(args.task_lines)
         ? args.task_lines.join("\n")
         : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
     const computerAgent = new ComputerAgent();
-    const childCtx = ctx?.createChild("ComputerAgent", task);
+    const childCtx = ctx?.createChild(computerAgent, task);
     return computerAgent.run(task, childCtx);
   }
 }
