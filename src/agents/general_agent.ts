@@ -1,6 +1,6 @@
 import { BaseAgent } from "./BaseAgent";
-import { ComputerAgentTool } from "../tools/computer_agent";
 import { SoftwareEngAgentTool } from "../tools/software_eng_agent";
+import { WebSearchTool } from "../tools/web_search";
 
 export class GeneralAgent extends BaseAgent {
   constructor() {
@@ -9,6 +9,6 @@ export class GeneralAgent extends BaseAgent {
   }
 
   private initTools(): void {
-    this.addTools([new SoftwareEngAgentTool()]);
+    this.addTools([new SoftwareEngAgentTool(), new WebSearchTool()]);
   }
 }
