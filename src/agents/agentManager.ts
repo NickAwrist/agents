@@ -14,6 +14,7 @@ import { ReadFileTool } from "../tools/read_file";
 import { RunTscTool } from "../tools/run_tsc";
 import { SoftwareEngAgentTool } from "../tools/software_eng_agent";
 import { WebSearchTool } from "../tools/web_search";
+import { BashTool } from "../tools/bash";
 import type { BaseTool } from '../tools/BaseTool';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -51,8 +52,9 @@ export const agentManager = {
       case 'modify_plan': return new ModifyPlan();
       case 'read_file': return new ReadFileTool();
       case 'run_tsc': return new RunTscTool();
-      case 'software_eng_agent': return new SoftwareEngAgentTool();
+      case 'coding_agent': return new SoftwareEngAgentTool();
       case 'web_search': return new WebSearchTool();
+      case 'bash': return new BashTool();
       default: throw new Error(`Unknown tool: ${toolName}`);
     }
   }
