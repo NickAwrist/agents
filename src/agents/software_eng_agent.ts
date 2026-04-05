@@ -5,6 +5,7 @@ import { ReadFileTool } from "../tools/read_file";
 import { RunTscTool } from "../tools/run_tsc";
 import { ModifyPlan } from "../tools/modify_plan";
 import { GrepTool } from "../tools/grep";
+import { CodeDiscoveryAgentTool } from "../tools/code_discovery_agent";
 
 export class SoftwareEngAgent extends BaseAgent {
   constructor() {
@@ -17,7 +18,7 @@ export class SoftwareEngAgent extends BaseAgent {
   }
 
   private initTools(): void {
-    this.addTools([new ListFilesTool(), new CreateFileTool(), new ReadFileTool(), new RunTscTool(), new ModifyPlan(), new GrepTool()]);
+    this.addTools([new ListFilesTool(), new CreateFileTool(), new ReadFileTool(), new RunTscTool(), new ModifyPlan(), new GrepTool(), new CodeDiscoveryAgentTool()]);
   }
 
   private initSystemPrompt(): void {
