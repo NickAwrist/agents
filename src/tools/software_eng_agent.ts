@@ -1,11 +1,11 @@
-import { ComputerAgent } from "../agents/computer_agent";
+import { SoftwareEngAgent } from "../agents/software_eng_agent";
 import { BaseTool } from "./BaseTool";
 import type { Tool } from "ollama";
 import type { RunContext } from "../RunContext";
 
-export class ComputerAgentTool extends BaseTool {
+export class SoftwareEngAgentTool extends BaseTool {
   constructor() {
-    super("computer_agent", "Call a computer agent to perform a complex task that pertains to the computer");
+    super("software_eng_agent", "Call a software engineering agent to perform a complex programming or code-related task");
   }
 
   override toTool(): Tool {
@@ -42,9 +42,9 @@ export class ComputerAgentTool extends BaseTool {
         : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
-    const computerAgent = new ComputerAgent();
-    const childCtx = ctx?.createChild("ComputerAgent", task);
-    return computerAgent.run(task, childCtx);
+    const softwareEngAgent = new SoftwareEngAgent();
+    // Providing a recognizable child context name
+    const childCtx = ctx?.createChild("SoftwareEngAgent", task);
+    return softwareEngAgent.run(task, childCtx);
   }
 }
-

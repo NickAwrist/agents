@@ -18,7 +18,8 @@ export class BaseAgent {
 
     this.tools = tools || [];
     this.model = model || "gemma4:31b";
-    this.systemPrompt = systemPrompt;
+    const gemmaWarning = "CRITICAL INSTRUCTION: When calling tools, strictly output standard JSON. Do NOT use custom delimiters like <|\"|>. If an argument requires multiple lines (e.g. file contents or code), carefully escape your newlines with \\n, OR preferably use an array of strings if the tool provides a lines property.\n\nCRITICAL DIRECTIVE: You are an agent designed to take action. If you formulate a plan or decide on next steps, you MUST IMMEDIATELY use a tool call to execute the first step of your plan. NEVER stop your response after just outputting a plan or a thought. Your reply must almost always conclude with a tool call unless the entire task is fully completed.";
+    this.systemPrompt = systemPrompt ? systemPrompt + "\n\n" + gemmaWarning : gemmaWarning;
 
     this.history = [];
 
@@ -84,13 +85,17 @@ export class BaseAgent {
     do {
       ctx?.beginStep({ kind: "llm_call", turnIndex });
 
+      const messages = [
+        systemMsg || { role: "system", content: "" },
+        ...this.history,
+      ];
+      if (prompt) {
+        messages.push({ role: "user", content: prompt });
+      }
+
       response = await ollama.chat({
         model: this.model,
-        messages: [
-          systemMsg || { role: "system", content: "" },
-          ...this.history,
-          { role: "user", content: prompt },
-        ],
+        messages,
         tools: this.tools.map((tool) => tool.toTool()),
         think: true,
       });
@@ -98,7 +103,10 @@ export class BaseAgent {
       const content = response.message.content ?? "";
       const thinking = response.message.thinking ?? "";
       const toolCalls = response.message.tool_calls ?? [];
-      if (content) {
+      if (content && toolCalls.length) {
+        const toolStr = "→ " + toolCalls.map((c) => c.function.name).join(", ");
+        ctx?.endStep(content + "\n\n" + toolStr, thinking || undefined);
+      } else if (content) {
         ctx?.endStep(content, thinking || undefined);
       } else if (toolCalls.length) {
         ctx?.endStep("→ " + toolCalls.map((c) => c.function.name).join(", "), thinking || undefined);
@@ -106,10 +114,18 @@ export class BaseAgent {
         ctx?.endStep("", thinking || undefined);
       }
 
-      this.history.push({ role: "user", content: prompt });
+      if (prompt) {
+        this.history.push({ role: "user", content: prompt });
+        prompt = "";
+      }
+
+      const assistantMsg: any = { role: "assistant", content: response.message.content || "" };
+      if (response.message.tool_calls && response.message.tool_calls.length > 0) {
+        assistantMsg.tool_calls = response.message.tool_calls;
+      }
+      this.history.push(assistantMsg);
 
       if (response.message.tool_calls?.length) {
-        const toolResults: string[] = [];
         for (const toolCall of response.message.tool_calls) {
           const toolName = toolCall.function.name;
           const args = this.parseToolArguments(toolCall.function.arguments);
@@ -118,14 +134,12 @@ export class BaseAgent {
           const result = await this.executeToolCall(toolCall, ctx);
           ctx?.endStep(result);
 
-          toolResults.push(`Result from tool call ${toolName}: ${result}`);
+          this.history.push({ role: "tool", content: result });
         }
-        prompt = toolResults.join("\n");
+        prompt = "";
         turnIndex++;
       }
     } while (response.message.tool_calls?.length);
-
-    this.history.push({ role: "assistant", content: response.message.content });
     const finalText = response.message.content ?? "";
     const finalThinking = response.message.thinking ?? "";
 

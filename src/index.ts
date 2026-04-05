@@ -31,7 +31,20 @@ async function main(): Promise<void> {
       break;
     }
 
-    const ctx = new RunContext("GeneralAgent", line);
+    const ctx = new RunContext("GeneralAgent", line, (ctx, step) => {
+      const tag = `[${ctx.agentName}]`;
+      const tool = step.toolName ? ` tool=${step.toolName}` : "";
+      console.log(`${tag} step ${step.kind} ${step.status}${tool} (turn ${step.turnIndex})`);
+      if (step.status === "running" && step.args) {
+        console.log(`${tag}   args: ${JSON.stringify(step.args, null, 2)}`);
+      }
+      if (step.status === "error" && step.error) {
+        console.log(`${tag}   error: ${step.error}`);
+      }
+      if (step.status === "done" && step.result) {
+        console.log(`${tag}   result: ${step.result.slice(0, 200)}`);
+      }
+    });
 
     let response: string | null = null;
     try {

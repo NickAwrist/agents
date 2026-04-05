@@ -2,9 +2,9 @@ import type { Tool } from "ollama";
 import { BaseTool } from "./BaseTool";
 import fs from 'fs/promises';
 
-export class CreateFileTool extends BaseTool {
+export class DeleteFileTool extends BaseTool {
   constructor() {
-    super('create_file', 'Create a new file');
+    super('delete_file', 'Delete a file');
   }
 
   override toTool(): Tool {
@@ -18,8 +18,6 @@ export class CreateFileTool extends BaseTool {
           required: ['path'],
           properties: {
             path: { type: 'string', description: 'File path (relative to cwd or absolute)' },
-            content: { type: 'string', description: 'File contents (use lines array instead if content is multiline)' },
-            lines: { type: 'array', items: { type: 'string' }, description: 'File contents as an array of strings. RECOMMENDED over content if your code contains newlines.' },
           },
         },
       },
@@ -36,13 +34,11 @@ export class CreateFileTool extends BaseTool {
     if (!path) {
       return 'Error: missing path (provide path or filename)';
     }
-    const content =
-      typeof args.content === 'string' 
-        ? args.content 
-        : Array.isArray(args.lines)
-          ? args.lines.join('\n')
-          : '';
-    await fs.writeFile(path, content);
-    return 'File created at ' + path;
+    try {
+      await fs.unlink(path);
+      return 'File deleted at ' + path;
+    } catch (e) {
+      return 'Error: failed to delete file ' + path + ': ' + (e as Error).message;
+    }
   }
 }
