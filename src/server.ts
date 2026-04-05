@@ -9,12 +9,39 @@ app.use(express.json());
 
 // In-memory store for sessions
 const sessions = new Map<string, AgentSession>();
+const sessionMetas = new Map<string, { createdAt: number, updatedAt: number, preview: string }>();
 
 app.post("/api/sessions", (req, res) => {
   const sessionId = crypto.randomUUID();
   const session = new AgentSession(sessionId);
   sessions.set(sessionId, session);
+  sessionMetas.set(sessionId, { createdAt: Date.now(), updatedAt: Date.now(), preview: "New Session" });
   res.json({ sessionId });
+});
+
+app.get("/api/sessions", (req, res) => {
+  const list = Array.from(sessions.keys()).map(id => {
+    const meta = sessionMetas.get(id);
+    const session = sessions.get(id);
+    const history = session?.history || [];
+    let preview = meta?.preview || "New Session";
+    
+    // Find first user message for a more descriptive preview
+    const userMsgs = history.filter(h => h.role === "user");
+    if (userMsgs.length > 0) {
+       const last = userMsgs[userMsgs.length - 1]?.content || "New Session";
+       preview = last.length > 40 ? last.substring(0, 40) + "..." : last;
+    }
+    
+    return {
+      id,
+      createdAt: meta?.createdAt || Date.now(),
+      updatedAt: meta?.updatedAt || Date.now(),
+      preview
+    };
+  }).sort((a, b) => b.updatedAt - a.updatedAt);
+  
+  res.json({ sessions: list });
 });
 
 app.get("/api/sessions/:id", (req, res) => {
@@ -77,6 +104,12 @@ app.post("/api/sessions/:id/chat", async (req, res) => {
     return;
   }
 
+  const meta = sessionMetas.get(req.params.id);
+  if (meta) {
+    meta.updatedAt = Date.now();
+    sessionMetas.set(req.params.id, meta);
+  }
+
   // We don't await this directly in the response so the stream gets events first,
   // but since we want to know when it finishes, we can just run it.
   try {
@@ -106,6 +139,6 @@ app.post("/api/sessions/:id/chat", async (req, res) => {
 });
 
 const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`[Backend] API Server running on port ${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[Backend] API Server running on port ${PORT} across the network`);
 });
