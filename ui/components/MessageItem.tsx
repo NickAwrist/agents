@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Bot, Waypoints } from "lucide-react";
 import type { Message } from "../types";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -6,13 +7,20 @@ import { cx } from "../styles";
 export function MessageItem({
   message,
   onViewSteps,
+  animDelayMs = 0,
 }: {
   message: Message;
   onViewSteps?: () => void;
+  animDelayMs?: number;
 }) {
+  const enterStyle: CSSProperties | undefined = animDelayMs > 0 ? { animationDelay: `${animDelayMs}ms` } : undefined;
+
   if (message.role === "user") {
     return (
-      <div className="flex justify-end border-b border-border-subtle py-[14px] last:border-b-0">
+      <div
+        className="ui-animate-slide-up flex justify-end border-b border-border-subtle py-[14px] last:border-b-0"
+        style={enterStyle}
+      >
         <div className="max-w-[min(85%,36rem)] min-w-0 rounded-xl border border-border-subtle bg-muted px-[14px] py-2.5 max-[640px]:max-w-[92%]">
           <MarkdownMessage className="text-foreground">{message.content}</MarkdownMessage>
         </div>
@@ -21,7 +29,10 @@ export function MessageItem({
   }
 
   return (
-    <div className="flex items-start gap-3 border-b border-border-subtle py-[14px] last:border-b-0 max-[640px]:gap-2.5">
+    <div
+      className="ui-animate-slide-up flex items-start gap-3 border-b border-border-subtle py-[14px] last:border-b-0 max-[640px]:gap-2.5"
+      style={enterStyle}
+    >
       <div
         className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent max-[640px]:size-[26px]"
         aria-hidden
@@ -39,7 +50,7 @@ export function MessageItem({
             type="button"
             onClick={onViewSteps}
             className={cx(
-              "mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-transparent px-2.5 py-1.5 text-[0.75rem] text-muted-foreground transition-colors duration-150 hover:bg-accent-soft hover:text-accent",
+              "mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-transparent px-2.5 py-1.5 text-[0.75rem] text-muted-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-accent-soft hover:text-accent active:scale-[0.98] active:bg-accent-soft-strong",
             )}
           >
             <Waypoints size={13} />

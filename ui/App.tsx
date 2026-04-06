@@ -1,13 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Bot,
-  Bug,
-  Menu,
-  MessageSquarePlus,
-  Plus,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Bug, MessageSquarePlus, PanelLeft, Sparkles, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
 import { StepsModal } from "./components/StepsModal";
@@ -172,6 +164,15 @@ export default function App() {
     return cleanup;
   }, [activeSessionId]);
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
+
   const sendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!input.trim() || !activeSessionId) return;
@@ -253,19 +254,23 @@ export default function App() {
   };
 
   const modalSteps = stepsModalData === "live" ? streamingSteps : stepsModalData;
-  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   const renameTarget = renameSessionId ? sessions.find((s) => s.id === renameSessionId) : null;
+
+  const sidebarCols = sidebarCollapsed ? "72px minmax(0, 1fr)" : "260px minmax(0, 1fr)";
 
   return (
     <div className="h-screen overflow-hidden">
-      <div className="grid h-full grid-cols-[260px_minmax(0,1fr)] max-[900px]:grid-cols-1">
+      <div
+        className="grid h-full max-[900px]:grid-cols-1 min-[901px]:overflow-hidden min-[901px]:transition-[grid-template-columns] min-[901px]:duration-300 min-[901px]:ease-[cubic-bezier(0.22,1,0.36,1)] min-[901px]:[grid-template-columns:var(--app-sidebar-cols)]"
+        style={{ ["--app-sidebar-cols" as string]: sidebarCols } as CSSProperties}
+      >
         <aside
+          id="app-sidebar"
           className={cx(
-            "min-h-0 min-w-0 border-r border-border-subtle bg-background",
-            sidebarCollapsed && "w-[72px]",
-            "max-[900px]:fixed max-[900px]:top-0 max-[900px]:bottom-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:w-[min(85vw,300px)] max-[900px]:translate-x-[-100%] max-[900px]:shadow-[4px_0_24px_rgba(0,0,0,0.35)] max-[900px]:transition-transform max-[900px]:duration-150",
-            sidebarOpen && "max-[900px]:translate-x-0",
-            sidebarCollapsed && "max-[900px]:w-[min(85vw,300px)]",
+            "min-h-0 min-w-0 border-r border-border-subtle bg-background min-[901px]:w-full",
+            "max-[900px]:fixed max-[900px]:top-0 max-[900px]:bottom-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:w-[min(85vw,300px)] max-[900px]:shadow-[4px_0_24px_rgba(0,0,0,0.35)]",
+            "max-[900px]:transform-gpu max-[900px]:transition-transform max-[900px]:duration-300 max-[900px]:ease-[cubic-bezier(0.22,1,0.36,1)]",
+            sidebarOpen ? "max-[900px]:translate-x-0" : "max-[900px]:-translate-x-full",
           )}
         >
           <Sidebar
@@ -284,72 +289,63 @@ export default function App() {
           />
         </aside>
 
-        {sidebarOpen && (
-          <button
-            className="fixed inset-0 z-20 border-0 bg-black/45 max-[900px]:block min-[901px]:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close sidebar"
-          />
-        )}
+        <button
+          type="button"
+          aria-hidden={!sidebarOpen}
+          tabIndex={sidebarOpen ? 0 : -1}
+          className={cx(
+            "fixed inset-0 z-20 border-0 bg-black/45 transition-opacity duration-300 ease-out max-[900px]:block min-[901px]:hidden",
+            sidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+          )}
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close sidebar"
+        />
 
-        <main className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] bg-background">
-          <header className="flex items-center justify-between gap-3 border-b border-border-subtle bg-background px-4 py-2.5 max-[900px]:px-3.5 max-[640px]:flex-col max-[640px]:items-start">
-            <div className="flex items-center gap-2.5 max-[640px]:w-full">
+        <main className="relative min-h-0 min-w-0 bg-background">
+          <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2.5 max-[640px]:left-3.5 max-[640px]:top-3.5 min-[901px]:hidden">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className={cx(iconButton, "pointer-events-auto")}
+              title="Open chats"
+              aria-expanded={sidebarOpen}
+              aria-controls="app-sidebar"
+            >
+              <PanelLeft size={18} />
+            </button>
+          </div>
+          <div className="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-2.5 max-[640px]:right-3.5 max-[640px]:top-3.5">
+            {activeSessionId && (
               <button
-                className={cx(iconButton, "hidden max-[900px]:inline-flex")}
-                onClick={() => setSidebarOpen(true)}
-                aria-label="Open sidebar"
+                type="button"
+                onClick={toggleDebug}
+                className={cx(iconButton, "pointer-events-auto")}
+                title="Debug"
+                aria-pressed={debugOpen}
               >
-                <Menu size={18} />
+                {debugOpen ? <X size={18} /> : <Bug size={18} />}
               </button>
+            )}
+          </div>
 
-              <div>
-                {activeSessionId ? (
-                  <div className="mt-0.5 flex items-center gap-2.5">
-                    <h1 className="m-0 text-[0.9375rem] font-semibold tracking-[-0.02em] text-foreground">Chat</h1>
-                    <span
-                      className="inline-flex items-center gap-1.5 rounded-md bg-transparent px-2 py-1 text-[0.75rem] font-medium text-muted-foreground"
-                      title={activeSessionId}
-                    >
-                      <Bot size={12} />
-                      {activeSessionId.length > 12 ? `${activeSessionId.slice(0, 12)}…` : activeSessionId}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="mt-0.5 flex items-center gap-2.5">
-                    <h1 className="m-0 text-[0.9375rem] font-semibold tracking-[-0.02em] text-foreground">Home</h1>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5 max-[900px]:flex-wrap max-[900px]:justify-end max-[640px]:w-full">
-              {activeSessionId && (
-                <button type="button" onClick={toggleDebug} className={iconButton} title="Debug" aria-pressed={debugOpen}>
-                  {debugOpen ? <X size={18} /> : <Bug size={18} />}
-                </button>
-              )}
-              <button type="button" onClick={createSession} disabled={isLoading} className={primaryButton}>
-                <Plus size={15} />
-                New chat
-              </button>
-            </div>
-          </header>
-
-          <section className="flex min-h-0 overflow-hidden">
+          <section className="flex h-full min-h-0 overflow-hidden pt-14 max-[640px]:pt-[52px]">
             {activeSessionId ? (
-              <ChatArea
-                messages={messages}
-                streamingSteps={streamingSteps}
-                streamingStep={streamingStep}
-                input={input}
-                setInput={setInput}
-                onSendMessage={sendMessage}
-                onViewSteps={setStepsModalData}
-                sessionPreview={activeSession?.preview ?? ""}
-              />
+              <div key={activeSessionId} className="ui-animate-fade-in flex h-full min-h-0 min-w-0 flex-1 flex-col">
+                <ChatArea
+                  messages={messages}
+                  streamingSteps={streamingSteps}
+                  streamingStep={streamingStep}
+                  input={input}
+                  setInput={setInput}
+                  onSendMessage={sendMessage}
+                  onViewSteps={setStepsModalData}
+                />
+              </div>
             ) : (
-              <div className="mx-auto flex h-full w-full max-w-[28rem] flex-col items-center justify-center gap-8 px-6 pb-12 pt-8">
+              <div
+                key="home"
+                className="ui-animate-fade-in mx-auto flex h-full w-full max-w-[28rem] flex-col items-center justify-center gap-8 px-6 pb-12 pt-8"
+              >
                 <div className="flex flex-col items-center text-center">
                   <div className="mb-5 flex size-[52px] items-center justify-center rounded-[14px] bg-accent-soft text-accent" aria-hidden>
                     <Sparkles size={22} />
@@ -375,7 +371,7 @@ export default function App() {
                         <li key={s.id}>
                           <button
                             type="button"
-                            className="flex w-full items-center justify-between gap-3 rounded-lg border border-border-subtle bg-surface px-3 py-2.5 text-left text-[0.8125rem] transition-colors duration-150 hover:border-border hover:bg-muted"
+                            className="flex w-full items-center justify-between gap-3 rounded-lg border border-border-subtle bg-surface px-3 py-2.5 text-left text-[0.8125rem] transition-[color,background-color,border-color,transform] duration-150 ease-out hover:border-border hover:bg-muted active:scale-[0.99] active:bg-muted/80"
                             onClick={() => loadSession(s.id)}
                           >
                             <span className="min-w-0 truncate whitespace-nowrap font-medium text-foreground">{s.preview || "Chat"}</span>

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { ArrowUp, Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
-import { cx, eyebrowText, primaryButton, secondaryButtonSmall } from "../styles";
+import { cx, primaryButton, secondaryButtonSmall } from "../styles";
 
 function startCase(value: string) {
   return value
@@ -80,7 +80,6 @@ export function ChatArea({
   setInput,
   onSendMessage,
   onViewSteps,
-  sessionPreview,
 }: {
   messages: Message[];
   streamingSteps: MessageStep[];
@@ -89,7 +88,6 @@ export function ChatArea({
   setInput: (v: string) => void;
   onSendMessage: (e: React.FormEvent) => void;
   onViewSteps: (steps: MessageStep[] | "live") => void;
-  sessionPreview: string;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
@@ -100,17 +98,8 @@ export function ChatArea({
 
   return (
     <div className="h-full min-h-0 flex-1">
-      <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
-        <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-3 max-[640px]:w-full max-[640px]:px-3.5 max-[640px]:pt-2.5">
-          <div>
-            <div className={eyebrowText}>Topic</div>
-            <h2 className="mt-0.5 max-w-[56ch] text-[0.8125rem] font-medium leading-[1.4] text-muted-foreground">
-              {sessionPreview || "Message the agent below."}
-            </h2>
-          </div>
-        </div>
-
-        <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pb-6 pt-3 max-[640px]:px-3.5 max-[640px]:pb-5 max-[640px]:pt-2.5">
+      <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+        <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pb-6 pt-5 max-[640px]:px-3.5 max-[640px]:pb-5 max-[640px]:pt-4">
           <div className="mx-auto flex min-h-min w-full max-w-3xl flex-col">
             {messages.length === 0 && (
               <div className="flex items-center gap-2 bg-transparent py-8 text-[0.875rem] text-muted-foreground">
@@ -123,12 +112,13 @@ export function ChatArea({
               <MessageItem
                 key={index}
                 message={message}
+                animDelayMs={Math.min(index, 10) * 32}
                 onViewSteps={message.steps && message.steps.length > 0 ? () => onViewSteps(message.steps!) : undefined}
               />
             ))}
 
             {(streamingStep || streamingSteps.length > 0) && (
-              <div className="mt-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border-subtle bg-transparent py-[10px] pb-3 text-[0.8125rem] text-muted-foreground">
+              <div className="ui-animate-slide-up mt-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border-subtle bg-transparent py-[10px] pb-3 text-[0.8125rem] text-muted-foreground">
                 <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                   <div className="size-1.5 shrink-0 rounded-full bg-accent animate-pulse" aria-hidden />
                   <span className="font-medium">{liveMeta.label}</span>

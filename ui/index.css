@@ -88,3 +88,59 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(152, 161, 173, 0.44);
 }
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ui-slide-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ui-modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ui-modal-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.ui-animate-fade-in {
+  animation: ui-fade-in 0.28s ease-out both;
+}
+
+.ui-animate-slide-up {
+  animation: ui-slide-fade-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ui-animate-modal-shell {
+  animation: ui-modal-backdrop-in 0.22s ease-out both;
+}
+
+.ui-animate-modal-panel {
+  animation: ui-modal-panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

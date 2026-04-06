@@ -26,7 +26,7 @@ export function RenameSessionModal({
   return (
     <div className={modalShell} role="dialog" aria-modal="true" aria-labelledby="rename-session-title" onClick={onClose}>
       <div className="max-h-none w-full max-w-[400px]" onClick={(e) => e.stopPropagation()}>
-        <div className="grid rounded-xl border border-border-subtle bg-surface">
+        <div className="ui-animate-modal-panel grid rounded-xl border border-border-subtle bg-surface">
           <div className={modalHeader}>
             <div>
               <div className={eyebrowText}>Chat</div>

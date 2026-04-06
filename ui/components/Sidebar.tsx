@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Clock3, Loader2, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import type { SessionSummary } from "../types";
 import { cx, eyebrowText, iconButton } from "../styles";
 
@@ -64,7 +64,7 @@ export function Sidebar({
           type="button"
           onClick={onNewSession}
           disabled={isLoading}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-2 text-[0.8125rem] font-semibold text-foreground transition-colors duration-150 hover:border-border hover:bg-muted disabled:cursor-not-allowed disabled:opacity-45"
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface px-2.5 py-2 text-[0.8125rem] font-semibold text-foreground transition-[color,background-color,border-color,transform] duration-150 ease-out hover:border-border hover:bg-muted active:scale-[0.99] active:bg-muted/80 disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100"
         >
           {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
           {!collapsed && <span>New chat</span>}
@@ -86,7 +86,7 @@ export function Sidebar({
                   type="button"
                   onClick={() => onSelectSession(session.id)}
                   className={cx(
-                    "flex w-full justify-center rounded-md px-2 py-2 text-left transition-colors duration-150 hover:bg-muted",
+                    "flex w-full justify-center rounded-md px-2 py-2 text-left transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.98]",
                     active ? "bg-accent-soft hover:bg-accent-soft-strong" : "",
                   )}
                   title={session.preview || "Chat"}
@@ -106,7 +106,7 @@ export function Sidebar({
                     onSelectSession(session.id);
                   }}
                   className={cx(
-                    "block w-full rounded-none rounded-l-md bg-transparent px-2 py-2.5 pr-1 text-left transition-colors duration-150 hover:bg-muted",
+                    "block w-full rounded-none rounded-l-md bg-transparent px-2 py-2.5 pr-1 text-left transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.995]",
                     active ? "bg-accent-soft hover:bg-accent-soft-strong" : "",
                   )}
                 >
@@ -114,9 +114,8 @@ export function Sidebar({
                     <div className="overflow-hidden text-[0.8125rem] leading-[1.4] text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
                       {session.preview || "New chat"}
                     </div>
-                    <div className="mt-1 flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
-                      <Clock3 size={12} />
-                      <span>{new Date(session.updatedAt).toLocaleString()}</span>
+                    <div className="mt-1 text-[0.6875rem] text-muted-foreground">
+                      {new Date(session.updatedAt).toLocaleString()}
                     </div>
                   </div>
                 </button>
@@ -124,7 +123,7 @@ export function Sidebar({
                   <button
                     type="button"
                     className={cx(
-                      "inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground",
+                      "inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.94] active:bg-muted/70",
                       menuOpenId === session.id && "bg-muted text-foreground",
                     )}
                     aria-expanded={menuOpenId === session.id}
@@ -139,12 +138,12 @@ export function Sidebar({
                   </button>
                   {menuOpenId === session.id && (
                     <div
-                      className="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded-lg border border-border-subtle bg-surface p-1 shadow-[0_10px_28px_rgba(0,0,0,0.4)]"
+                      className="ui-animate-slide-up absolute right-0 top-full z-50 mt-1 min-w-[140px] origin-top-right rounded-lg border border-border-subtle bg-surface p-1 shadow-[0_10px_28px_rgba(0,0,0,0.4)]"
                       role="menu"
                     >
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-foreground transition-colors duration-150 hover:bg-muted"
+                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.99] active:bg-muted/80"
                         role="menuitem"
                         onClick={() => {
                           setMenuOpenId(null);
@@ -156,7 +155,7 @@ export function Sidebar({
                       </button>
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-red-400 transition-colors duration-150 hover:bg-red-400/10 hover:text-red-300"
+                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-red-400 transition-[color,background-color,transform] duration-150 ease-out hover:bg-red-400/10 hover:text-red-300 active:scale-[0.99] active:bg-red-400/15"
                         role="menuitem"
                         onClick={() => {
                           setMenuOpenId(null);
