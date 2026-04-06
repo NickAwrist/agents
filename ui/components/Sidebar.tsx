@@ -87,7 +87,7 @@ export function Sidebar({
                   onClick={() => onSelectSession(session.id)}
                   className={cx(
                     "flex w-full justify-center rounded-md px-2 py-2 text-left transition-colors duration-150 hover:bg-muted",
-                    active ? "bg-[rgba(34,197,94,0.08)] hover:bg-[rgba(34,197,94,0.1)]" : "",
+                    active ? "bg-accent-soft hover:bg-accent-soft-strong" : "",
                   )}
                   title={session.preview || "Chat"}
                 >
@@ -107,7 +107,7 @@ export function Sidebar({
                   }}
                   className={cx(
                     "block w-full rounded-none rounded-l-md bg-transparent px-2 py-2.5 pr-1 text-left transition-colors duration-150 hover:bg-muted",
-                    active ? "bg-[rgba(34,197,94,0.08)] hover:bg-[rgba(34,197,94,0.1)]" : "",
+                    active ? "bg-accent-soft hover:bg-accent-soft-strong" : "",
                   )}
                 >
                   <div className="min-w-0">

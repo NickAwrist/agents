@@ -351,7 +351,7 @@ export default function App() {
             ) : (
               <div className="mx-auto flex h-full w-full max-w-[28rem] flex-col items-center justify-center gap-8 px-6 pb-12 pt-8">
                 <div className="flex flex-col items-center text-center">
-                  <div className="mb-5 flex size-[52px] items-center justify-center rounded-[14px] bg-[rgba(34,197,94,0.12)] text-accent" aria-hidden>
+                  <div className="mb-5 flex size-[52px] items-center justify-center rounded-[14px] bg-accent-soft text-accent" aria-hidden>
                     <Sparkles size={22} />
                   </div>
                   <h2 className="mb-2.5 text-[1.375rem] font-semibold leading-[1.25] tracking-[-0.02em] text-foreground">

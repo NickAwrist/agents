@@ -23,7 +23,7 @@ export function MessageItem({
   return (
     <div className="flex items-start gap-3 border-b border-border-subtle py-[14px] last:border-b-0 max-[640px]:gap-2.5">
       <div
-        className="flex size-7 shrink-0 items-center justify-center rounded-md bg-[rgba(34,197,94,0.12)] text-accent max-[640px]:size-[26px]"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent max-[640px]:size-[26px]"
         aria-hidden
       >
         <Bot size={14} />
@@ -39,7 +39,7 @@ export function MessageItem({
             type="button"
             onClick={onViewSteps}
             className={cx(
-              "mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-transparent px-2.5 py-1.5 text-[0.75rem] text-muted-foreground transition-colors duration-150 hover:bg-[rgba(34,197,94,0.08)] hover:text-accent",
+              "mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-transparent px-2.5 py-1.5 text-[0.75rem] text-muted-foreground transition-colors duration-150 hover:bg-accent-soft hover:text-accent",
             )}
           >
             <Waypoints size={13} />

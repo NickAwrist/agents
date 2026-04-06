@@ -17,15 +17,17 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
   <title>Agent Run</title>
   <style>
     :root {
-      --bg: #ececee;
-      --panel: #fafafa;
-      --border: #c8c8d0;
-      --text: #1a1a1f;
-      --muted: #5c5c66;
-      --accent: #2563eb;
-      --green: #16a34a;
-      --red: #b91c1c;
-      --orange: #d97706;
+      --bg: #0b0c0f;
+      --panel: #14161a;
+      --panel-strong: #191c21;
+      --panel-muted: #111317;
+      --border: #2b2f36;
+      --text: #eceff3;
+      --muted: #98a1ad;
+      --accent: #dce3eb;
+      --accent-soft: #dce3eb14;
+      --red: #f38b8b;
+      --orange: #e7bc7a;
       --mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
       --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
@@ -36,7 +38,9 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
       font-size: 14px;
       line-height: 1.45;
       color: var(--text);
-      background: var(--bg);
+      background:
+        radial-gradient(circle at top, rgba(255, 255, 255, 0.035), transparent 30%),
+        linear-gradient(180deg, #101114 0%, var(--bg) 34%, #08090b 100%);
     }
     .wrap { max-width: 960px; margin: 0 auto; padding: 1.25rem 1rem 2rem; }
     h1 {
@@ -71,10 +75,10 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
     .prompt { white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; }
     details {
       border: 1px solid var(--border);
-      background: #fff;
+      background: var(--panel-muted);
       margin-bottom: 0.5rem;
     }
-    details.run-root { border-width: 2px; border-color: #94a3b8; }
+    details.run-root { border-width: 2px; border-color: #434852; }
     summary {
       cursor: pointer;
       list-style: none;
@@ -86,7 +90,7 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
       font-weight: 600;
       font-size: 0.82rem;
       user-select: none;
-      background: #f0f0f3;
+      background: var(--panel-strong);
     }
     summary::-webkit-details-marker { display: none; }
     summary::before {
@@ -101,7 +105,7 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
       transition: transform 0.12s ease;
     }
     details[open] > summary::before { transform: rotate(45deg); margin-top: -0.1em; }
-    summary:hover { background: #e6e6ea; }
+    summary:hover { background: #22252b; }
     .summary-meta { font-weight: 400; font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
     .badge {
       display: inline-block;
@@ -112,9 +116,9 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
-    .badge-done { background: #dcfce7; color: var(--green); }
-    .badge-running { background: #fef3c7; color: var(--orange); }
-    .badge-error { background: #fee2e2; color: var(--red); }
+    .badge-done { background: var(--accent-soft); color: var(--accent); }
+    .badge-running { background: #e7bc7a1c; color: var(--orange); }
+    .badge-error { background: #f38b8b1c; color: #f6b0b0; }
     .dur {
       margin-left: auto;
       font-family: var(--mono);
@@ -134,7 +138,7 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
     .pre {
       margin: 0;
       padding: 0.45rem 0.55rem;
-      background: #fff;
+      background: #111317;
       border: 1px solid var(--border);
       font-family: var(--mono);
       font-size: 0.75rem;
@@ -142,10 +146,10 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
       word-break: break-word;
       overflow-x: auto;
     }
-    .pre.dark { background: #1e1e24; color: #e8e8ed; border-color: #2a2a32; }
-    .pre.thinking { background: #f5f0ff; color: #2e1065; border-color: #c4b5fd; font-style: italic; }
+    .pre.dark { background: #0d0f13; color: #ebeff5; border-color: #20242a; }
+    .pre.thinking { background: #171a20; color: #cfd8e4; border-color: #343941; font-style: italic; }
     .step { margin-bottom: 0.5rem; }
-    .step > summary { background: #f5f5f0; }
+    .step > summary { background: #191c21; }
     .step[open] > summary { border-bottom: 1px solid var(--border); }
     .nested-label {
       font-size: 0.65rem;
@@ -309,7 +313,7 @@ export function buildRunViewerHtml(snapshot: Record<string, unknown>): string {
     if (finalResult) {
       root.appendChild(el("h2", null, "Response"));
       var rcard = el("div", { class: "card" });
-      var resp = el("div", { style: "border-left: 3px solid #2563eb; padding-left: 0.75rem; white-space: pre-wrap; word-break: break-word;" });
+      var resp = el("div", { style: "border-left: 3px solid var(--accent); padding-left: 0.75rem; white-space: pre-wrap; word-break: break-word;" });
       resp.textContent = finalResult;
       rcard.appendChild(resp);
       root.appendChild(rcard);

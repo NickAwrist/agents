@@ -51,7 +51,7 @@ export function RenameSessionModal({
             <input
               id="rename-session-input"
               ref={inputRef}
-              className="w-full rounded-lg border border-border-subtle bg-background px-3 py-2.5 text-[0.9375rem] text-foreground outline-none focus:border-accent focus:shadow-[0_0_0_1px_rgba(34,197,94,0.2)]"
+              className="w-full rounded-lg border border-border-subtle bg-background px-3 py-2.5 text-[0.9375rem] text-foreground outline-none focus:border-accent focus:shadow-[0_0_0_1px_var(--color-accent-ring)]"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder="Uses last user message if empty"
