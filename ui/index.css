@@ -4,19 +4,19 @@
   --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --font-serif: var(--font-sans);
 
-  --color-background: #0b0c0f;
-  --color-surface: #14161a;
-  --color-foreground: #eceff3;
-  --color-muted: #1a1c20;
-  --color-muted-foreground: #98a1ad;
-  --color-accent: #dce3eb;
-  --color-accent-hover: #f3f6fa;
-  --color-accent-foreground: #0f141b;
-  --color-accent-soft: #dce3eb14;
-  --color-accent-soft-strong: #dce3eb20;
-  --color-accent-ring: #dce3eb42;
-  --color-border: #2b2f36;
-  --color-border-subtle: #20242a;
+  --color-background: #171717;
+  --color-surface: #212121;
+  --color-foreground: #e8e8e8;
+  --color-muted: #262626;
+  --color-muted-foreground: #9b9b9b;
+  --color-accent: #e8e8e8;
+  --color-accent-hover: #f5f5f5;
+  --color-accent-foreground: #171717;
+  --color-accent-soft: #ffffff14;
+  --color-accent-soft-strong: #ffffff1f;
+  --color-accent-ring: #ffffff33;
+  --color-border: #3a3a3a;
+  --color-border-subtle: #2a2a2a;
 }
 
 :root {
@@ -36,9 +36,7 @@
 
   body {
     margin: 0;
-    background:
-      radial-gradient(circle at top, rgba(255, 255, 255, 0.035), transparent 30%),
-      linear-gradient(180deg, #101114 0%, var(--color-background) 34%, #08090b 100%);
+    background: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -81,12 +79,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(152, 161, 173, 0.28);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(152, 161, 173, 0.44);
+  background: rgba(255, 255, 255, 0.32);
 }
 
 @keyframes ui-fade-in {
