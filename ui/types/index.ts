@@ -5,6 +5,13 @@ export interface SessionSummary {
   preview: string;
 }
 
+/** Nested subagent run attached to a tool_call step (from RunContext.wireSteps). */
+export interface SubagentRun {
+  agentName?: string;
+  prompt?: string;
+  steps?: MessageStep[];
+}
+
 export interface MessageStep {
   kind: string;
   status?: string;
@@ -13,6 +20,8 @@ export interface MessageStep {
   args?: any;
   thinking?: string;
   result?: string;
+  error?: string;
+  childRun?: SubagentRun;
 }
 
 export interface Message {

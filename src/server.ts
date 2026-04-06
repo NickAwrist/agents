@@ -1,12 +1,12 @@
 import express from "express";
 import cors from "cors";
 import crypto from "crypto";
-import type { Step } from "./RunContext";
+import type { HistoryWireStep } from "./session/AgentSession";
 import { AgentSession } from "./session/AgentSession";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 function writeSse(res: express.Response, payload: Record<string, unknown>) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -44,7 +44,7 @@ app.post("/api/chat", async (req, res) => {
 
   const session = new AgentSession(crypto.randomUUID());
   session.restoreFromPersistence({
-    history: body.history as { role: string; content: string; steps?: Step[] }[],
+    history: body.history as { role: string; content: string; steps?: HistoryWireStep[] }[],
     modelMessages: body.modelMessages,
   });
 

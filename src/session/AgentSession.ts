@@ -1,10 +1,12 @@
 import { EventEmitter } from "events";
 import { agentManager } from "../agents/agentManager";
-import { RunContext, type Step } from "../RunContext";
+import { RunContext } from "../RunContext";
+
+export type HistoryWireStep = Record<string, unknown>;
 
 export class AgentSession extends EventEmitter {
   public sessionId: string;
-  public history: { role: string; content: string; steps?: Step[] }[] = [];
+  public history: { role: string; content: string; steps?: HistoryWireStep[] }[] = [];
   private generalAgent: any;
 
   constructor(sessionId: string) {
@@ -16,7 +18,7 @@ export class AgentSession extends EventEmitter {
 
   /** Rehydrate from client persistence (localStorage) after a server restart. */
   restoreFromPersistence(payload: {
-    history: { role: string; content: string; steps?: Step[] }[];
+    history: { role: string; content: string; steps?: HistoryWireStep[] }[];
     modelMessages?: Array<Record<string, unknown>>;
   }) {
     this.history = payload.history.map((h) => ({
@@ -43,10 +45,9 @@ export class AgentSession extends EventEmitter {
     this.history.push({ role: "user", content: prompt });
     
     const ctx = new RunContext(this.generalAgent, prompt, (ctx, step) => {
-      // Emit the step changing and the full array of steps up to now
       this.emit("step", {
-        step: { ...step, agentName: ctx.agentName },
-        steps: ctx.steps.map((s) => ({ ...s, agentName: ctx.agentName })),
+        step: ctx.wireStep(step),
+        steps: ctx.wireSteps(),
       });
     });
 
@@ -62,10 +63,10 @@ export class AgentSession extends EventEmitter {
       ctx.failStep(result);
     }
 
-    this.history.push({ 
-      role: "assistant", 
-      content: result, 
-      steps: [...ctx.steps] // Capture final steps array
+    this.history.push({
+      role: "assistant",
+      content: result,
+      steps: ctx.wireSteps(),
     });
 
     return result;

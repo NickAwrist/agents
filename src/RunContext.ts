@@ -110,7 +110,7 @@ export class RunContext {
     return null;
   }
 
-  private _stepSnapshot(step: Step): Record<string, unknown> {
+  private _stepBase(step: Step): Record<string, unknown> {
     const out: Record<string, unknown> = {
       kind: step.kind,
       status: step.status,
@@ -123,7 +123,30 @@ export class RunContext {
     if (step.result !== undefined) out.result = step.result;
     if (step.thinking !== undefined) out.thinking = step.thinking;
     if (step.error !== undefined) out.error = step.error;
+    return out;
+  }
+
+  private _stepSnapshot(step: Step): Record<string, unknown> {
+    const out = this._stepBase(step);
     if (step.childContext) out.childRun = step.childContext.snapshot();
     return out;
+  }
+
+  /** Plain JSON for SSE / UI; nested subagent runs under `childRun`. */
+  wireStep(step: Step): Record<string, unknown> {
+    const out = this._stepBase(step);
+    out.agentName = this.agentName;
+    if (step.childContext) {
+      out.childRun = {
+        agentName: step.childContext.agentName,
+        prompt: step.childContext.prompt,
+        steps: step.childContext.wireSteps(),
+      };
+    }
+    return out;
+  }
+
+  wireSteps(): Record<string, unknown>[] {
+    return this._steps.map((s) => this.wireStep(s));
   }
 }
