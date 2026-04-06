@@ -4,6 +4,74 @@ import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
 import { cx, eyebrowText, primaryButton, secondaryButtonSmall } from "../styles";
 
+function startCase(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatAgentName(name?: string) {
+  if (!name) return null;
+  if (name === "general_agent") return "Main agent";
+  if (name === "coding_agent") return "Coding agent";
+  if (name === "computer_agent") return "Computer agent";
+  if (name === "code_discovery_agent") return "Code discovery agent";
+  return startCase(name);
+}
+
+function getLiveStepMeta(step: MessageStep | null, count: number) {
+  if (!step) {
+    return {
+      label: "Running",
+      detail: `${count} step${count === 1 ? "" : "s"}`,
+    };
+  }
+
+  const toolName = step.toolName ? startCase(step.toolName) : null;
+  const agentName = formatAgentName(step.agentName);
+  const isSubagentTool = step.kind === "tool_call" && step.toolName?.endsWith("_agent");
+
+  if (isSubagentTool) {
+    return {
+      label: "Subagent",
+      detail: toolName,
+    };
+  }
+
+  if (step.kind === "tool_call") {
+    return {
+      label: "Tool",
+      detail: toolName,
+    };
+  }
+
+  if (step.kind === "llm_call" && agentName && step.agentName !== "general_agent") {
+    return {
+      label: "Subagent",
+      detail: agentName,
+    };
+  }
+
+  if (step.kind === "complete") {
+    return {
+      label: "Writing",
+      detail: null,
+    };
+  }
+
+  if (step.kind === "error") {
+    return {
+      label: "Error",
+      detail: null,
+    };
+  }
+
+  return {
+    label: "Thinking",
+    detail: agentName && step.agentName !== "general_agent" ? agentName : null,
+  };
+}
+
 export function ChatArea({
   messages,
   streamingSteps,
@@ -24,6 +92,7 @@ export function ChatArea({
   sessionPreview: string;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -62,18 +131,20 @@ export function ChatArea({
               <div className="mt-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border-subtle bg-transparent py-[10px] pb-3 text-[0.8125rem] text-muted-foreground">
                 <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                   <div className="size-1.5 shrink-0 rounded-full bg-accent animate-pulse" aria-hidden />
-                  <span className="font-medium">
-                    {streamingStep ? "Thinking…" : `Running · ${streamingSteps.length} step${streamingSteps.length !== 1 ? "s" : ""}`}
-                  </span>
-                  {streamingStep?.toolName && (
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-muted px-2 py-[3px] text-[0.6875rem] font-medium text-foreground">
-                      {streamingStep.toolName}
+                  <span className="font-medium">{liveMeta.label}</span>
+                  {liveMeta.detail && (
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-transparent px-2 py-[3px] text-[0.6875rem] font-medium text-foreground">
+                      {liveMeta.detail}
                     </span>
                   )}
                 </div>
                 {streamingSteps.length > 0 && (
-                  <button type="button" className={secondaryButtonSmall} onClick={() => onViewSteps("live")}>
-                    Steps
+                  <button
+                    type="button"
+                    className={cx(secondaryButtonSmall, "px-1.5 py-1 text-[0.6875rem] text-muted-foreground/80 hover:text-muted-foreground")}
+                    onClick={() => onViewSteps("live")}
+                  >
+                    Trace
                   </button>
                 )}
               </div>

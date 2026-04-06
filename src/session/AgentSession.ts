@@ -44,7 +44,10 @@ export class AgentSession extends EventEmitter {
     
     const ctx = new RunContext(this.generalAgent, prompt, (ctx, step) => {
       // Emit the step changing and the full array of steps up to now
-      this.emit("step", { step, steps: [...ctx.steps] });
+      this.emit("step", {
+        step: { ...step, agentName: ctx.agentName },
+        steps: ctx.steps.map((s) => ({ ...s, agentName: ctx.agentName })),
+      });
     });
 
     let result = "Error running agent.";

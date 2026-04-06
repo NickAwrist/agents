@@ -7,7 +7,9 @@ export interface SessionSummary {
 
 export interface MessageStep {
   kind: string;
+  status?: string;
   toolName?: string;
+  agentName?: string;
   args?: any;
   thinking?: string;
   result?: string;
