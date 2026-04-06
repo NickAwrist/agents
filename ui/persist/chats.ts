@@ -31,7 +31,7 @@ export function upsertStoredSession(patch: { id: string } & Partial<Omit<StoredC
   const all = loadChatsV1();
   const i = all.findIndex((s) => s.id === patch.id);
   if (i >= 0) {
-    const cur = all[i];
+    const cur = all[i]!;
     all[i] = {
       id: patch.id,
       createdAt: patch.createdAt ?? cur.createdAt,
@@ -55,25 +55,4 @@ export function upsertStoredSession(patch: { id: string } & Partial<Omit<StoredC
 
 export function removeStoredSession(id: string): void {
   saveChatsV1(loadChatsV1().filter((s) => s.id !== id));
-}
-
-export async function restoreAllToServer(stored: StoredChatSession[]): Promise<void> {
-  for (const s of stored) {
-    try {
-      await fetch("/api/sessions/restore", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: s.id,
-          createdAt: s.createdAt,
-          updatedAt: s.updatedAt,
-          customTitle: s.customTitle,
-          history: s.history,
-          modelMessages: s.modelMessages,
-        }),
-      });
-    } catch (e) {
-      console.error("Failed to restore session", s.id, e);
-    }
-  }
 }

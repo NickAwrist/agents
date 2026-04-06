@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Bug, MessageSquarePlus, PanelLeft, Sparkles, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
@@ -7,12 +7,36 @@ import { DebugModal } from "./components/DebugModal";
 import { RenameSessionModal } from "./components/RenameSessionModal";
 import type { SessionSummary, Message, MessageStep, DebugData } from "./types";
 import { cx, iconButton, primaryButton } from "./styles";
-import {
-  loadChatsV1,
-  removeStoredSession,
-  restoreAllToServer,
-  upsertStoredSession,
-} from "./persist/chats";
+import { loadChatsV1, removeStoredSession, upsertStoredSession } from "./persist/chats";
+import { storedSessionToSummary } from "./persist/preview";
+
+function readSseBlocks(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  onData: (obj: Record<string, unknown>) => void,
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  return (async () => {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (;;) {
+        const idx = buffer.indexOf("\n\n");
+        if (idx < 0) break;
+        const block = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const dataLine = block.split("\n").find((l) => l.startsWith("data: "));
+        if (!dataLine) continue;
+        try {
+          onData(JSON.parse(dataLine.slice(6)) as Record<string, unknown>);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  })();
+}
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -31,64 +55,30 @@ export default function App() {
   const debugOpenRef = useRef(false);
   debugOpenRef.current = debugOpen;
 
-  const fetchSessions = async (): Promise<SessionSummary[]> => {
-    try {
-      const res = await fetch("/api/sessions");
-      const data = await res.json();
-      const list = data.sessions || [];
-      setSessions(list);
-      return list;
-    } catch (e) {
-      console.error("Failed to load sessions", e);
-      return [];
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await restoreAllToServer(loadChatsV1());
-      if (cancelled) return;
-      const list = await fetchSessions();
-      if (cancelled) return;
-      const storedIds = new Set(loadChatsV1().map((s) => s.id));
-      for (const s of list) {
-        if (storedIds.has(s.id)) continue;
-        try {
-          const dRes = await fetch(`/api/sessions/${encodeURIComponent(s.id)}`);
-          const d = await dRes.json();
-          upsertStoredSession({
-            id: s.id,
-            createdAt: s.createdAt,
-            updatedAt: s.updatedAt,
-            history: d.history || [],
-            modelMessages: d.modelMessages,
-            customTitle: d.customTitle ?? null,
-          });
-        } catch (e) {
-          console.error("Failed to pull session into local storage", s.id, e);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const refreshSessions = useCallback(() => {
+    const list = loadChatsV1()
+      .map(storedSessionToSummary)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    setSessions(list);
   }, []);
 
-  const createSession = async () => {
+  useEffect(() => {
+    refreshSessions();
+  }, [refreshSessions]);
+
+  const createSession = () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/sessions", { method: "POST" });
-      const data = await res.json();
+      const id = crypto.randomUUID();
       upsertStoredSession({
-        id: data.sessionId,
+        id,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         history: [],
         customTitle: null,
       });
-      await fetchSessions();
-      await loadSession(data.sessionId);
+      refreshSessions();
+      loadSession(id);
       setSidebarOpen(false);
     } catch (e) {
       console.error(e);
@@ -96,73 +86,16 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const loadSession = async (id: string) => {
+  const loadSession = (id: string) => {
     setActiveSessionId(id);
     setMessages([]);
     setStreamingStep(null);
     setStreamingSteps([]);
-
-    try {
-      const res = await fetch(`/api/sessions/${id}`);
-      const data = await res.json();
-      if (data.history) {
-        setMessages(data.history);
-      }
-      const prev = loadChatsV1().find((s) => s.id === id);
-      upsertStoredSession({
-        id,
-        createdAt: prev?.createdAt ?? Date.now(),
-        updatedAt: Date.now(),
-        history: data.history || [],
-        modelMessages: data.modelMessages,
-        customTitle: data.customTitle ?? prev?.customTitle ?? null,
-      });
-    } catch (e) {
-      console.error("Failed to load session history", e);
+    const stored = loadChatsV1().find((s) => s.id === id);
+    if (stored?.history?.length) {
+      setMessages(stored.history);
     }
   };
-
-  const connectStream = () => {
-    if (!activeSessionId) return;
-
-    const es = new EventSource(`/api/sessions/${activeSessionId}/stream`);
-    es.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "step") {
-        setStreamingStep(data.step);
-        if (data.steps) setStreamingSteps(data.steps);
-      } else if (data.type === "chat_done") {
-        setStreamingStep(null);
-        setStreamingSteps([]);
-        setMessages((prev) => [...prev, { role: "assistant", content: data.result, steps: data.steps }]);
-        fetchSessions();
-        if (activeSessionId) {
-          fetch(`/api/sessions/${encodeURIComponent(activeSessionId)}`)
-            .then((r) => r.json())
-            .then((detail) => {
-              upsertStoredSession({
-                id: activeSessionId,
-                history: detail.history || [],
-                modelMessages: detail.modelMessages,
-                customTitle: detail.customTitle ?? null,
-                updatedAt: Date.now(),
-              });
-            })
-            .catch((err) => console.error("Persist chat after turn failed", err));
-        }
-        if (debugOpenRef.current) fetchDebugData(activeSessionId);
-      }
-    };
-
-    return () => {
-      es.close();
-    };
-  };
-
-  useEffect(() => {
-    const cleanup = connectStream();
-    return cleanup;
-  }, [activeSessionId]);
 
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -173,31 +106,103 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [sidebarOpen]);
 
+  const fetchDebugData = async (id: string) => {
+    try {
+      const spRes = await fetch("/api/agent/system-prompt");
+      const spJson = (await spRes.json()) as { systemPrompt?: string };
+      const stored = loadChatsV1().find((s) => s.id === id);
+      setDebugData({
+        systemPrompt: spJson.systemPrompt ?? "",
+        history: stored?.history ?? [],
+        customTitle: stored?.customTitle ?? null,
+        modelMessages: stored?.modelMessages,
+      });
+    } catch (e) {
+      console.error("Failed to load debug data", e);
+    }
+  };
+
   const sendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!input.trim() || !activeSessionId) return;
 
     const msg = input.trim();
     setInput("");
-    const nextHistory = [...messages, { role: "user" as const, content: msg }];
+    const priorMessages = messages;
+    const nextHistory = [...priorMessages, { role: "user" as const, content: msg }];
     setMessages(nextHistory);
     upsertStoredSession({ id: activeSessionId, history: nextHistory, updatedAt: Date.now() });
 
-    await fetch(`/api/sessions/${activeSessionId}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: msg }),
-    });
+    const stored = loadChatsV1().find((s) => s.id === activeSessionId);
 
-    if (debugOpen) fetchDebugData(activeSessionId);
-  };
+    const failWithAssistantError = (errText: string) => {
+      const failedHistory: Message[] = [
+        ...priorMessages,
+        { role: "user", content: msg },
+        { role: "assistant", content: `Error: ${errText}` },
+      ];
+      setMessages(failedHistory);
+      upsertStoredSession({ id: activeSessionId!, history: failedHistory, updatedAt: Date.now() });
+      refreshSessions();
+    };
 
-  const fetchDebugData = async (id: string) => {
+    let res: Response;
     try {
-      const res = await fetch(`/api/sessions/${id}`);
-      setDebugData(await res.json());
-    } catch (e) {
-      console.error("Failed to load debug data", e);
+      res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: msg,
+          history: priorMessages,
+          modelMessages: stored?.modelMessages,
+        }),
+      });
+    } catch (err) {
+      console.error(err);
+      failWithAssistantError(err instanceof Error ? err.message : "Network error");
+      return;
+    }
+
+    if (!res.ok) {
+      const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+      failWithAssistantError(typeof errBody.error === "string" ? errBody.error : res.statusText);
+      return;
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      failWithAssistantError("No response body");
+      return;
+    }
+
+    try {
+      await readSseBlocks(reader, (data) => {
+        if (data.type === "step") {
+          setStreamingStep(data.step as MessageStep);
+          if (Array.isArray(data.steps)) setStreamingSteps(data.steps as MessageStep[]);
+        } else if (data.type === "chat_done") {
+          setStreamingStep(null);
+          setStreamingSteps([]);
+          const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
+          setMessages(hist);
+          upsertStoredSession({
+            id: activeSessionId!,
+            history: hist,
+            modelMessages: data.modelMessages as Array<Record<string, unknown>> | undefined,
+            updatedAt: Date.now(),
+          });
+          refreshSessions();
+          if (debugOpenRef.current) fetchDebugData(activeSessionId!);
+        } else if (data.type === "error") {
+          setStreamingStep(null);
+          setStreamingSteps([]);
+          const errText = typeof data.error === "string" ? data.error : "Unknown error";
+          failWithAssistantError(errText);
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      failWithAssistantError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -206,51 +211,28 @@ export default function App() {
     setDebugOpen(!debugOpen);
   };
 
-  const deleteSession = async (id: string) => {
+  const deleteSession = (id: string) => {
     if (!confirm("Delete this chat? This cannot be undone.")) return;
-    const enc = encodeURIComponent(id);
-    try {
-      const res = await fetch(`/api/sessions/${enc}/delete`, { method: "POST" });
-      const gone = res.status === 404;
-      if (!res.ok && !gone) {
-        console.error("Delete failed", res.status);
-        await fetchSessions();
-        return;
-      }
-      if (activeSessionId === id) {
-        setActiveSessionId(null);
-        setMessages([]);
-        setDebugOpen(false);
-        setDebugData(null);
-      }
-      removeStoredSession(id);
-      await fetchSessions();
-    } catch (e) {
-      console.error("Failed to delete session", e);
-      await fetchSessions();
+    removeStoredSession(id);
+    if (activeSessionId === id) {
+      setActiveSessionId(null);
+      setMessages([]);
+      setDebugOpen(false);
+      setDebugData(null);
     }
+    refreshSessions();
   };
 
-  const saveSessionTitle = async (title: string) => {
+  const saveSessionTitle = (title: string) => {
     if (!renameSessionId) return;
     const id = renameSessionId;
-    try {
-      const res = await fetch(`/api/sessions/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayTitle: title.length > 0 ? title : null }),
-      });
-      if (!res.ok) return;
-      upsertStoredSession({
-        id,
-        customTitle: title.trim().length > 0 ? title.trim() : null,
-        updatedAt: Date.now(),
-      });
-      setRenameSessionId(null);
-      await fetchSessions();
-    } catch (e) {
-      console.error("Failed to rename session", e);
-    }
+    upsertStoredSession({
+      id,
+      customTitle: title.trim().length > 0 ? title.trim() : null,
+      updatedAt: Date.now(),
+    });
+    setRenameSessionId(null);
+    refreshSessions();
   };
 
   const modalSteps = stepsModalData === "live" ? streamingSteps : stepsModalData;
