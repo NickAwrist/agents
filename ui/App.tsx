@@ -13,6 +13,8 @@ import { loadChatsV1, removeStoredSession, upsertStoredSession } from "./persist
 import { loadPreferredModel, savePreferredModel } from "./persist/modelPreference";
 import { storedSessionToSummary } from "./persist/preview";
 
+const OLLAMA_HEALTH_POLL_MS = 3000;
+
 function isStoredSessionEmpty(id: string): boolean {
   const row = loadChatsV1().find((s) => s.id === id);
   return !row?.history?.length;
@@ -85,8 +87,32 @@ export default function App() {
   const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
   const [serverDefaultModel, setServerDefaultModel] = useState("gemma4:31b");
   const [selectedModel, setSelectedModel] = useState(() => loadPreferredModel("gemma4:31b"));
+  const [ollamaConnected, setOllamaConnected] = useState<boolean | null>(null);
   const debugOpenRef = useRef(false);
   debugOpenRef.current = debugOpen;
+
+  const fetchOllamaHealth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ollama/health");
+      const data = (await res.json().catch(() => ({}))) as { connected?: boolean };
+      if (!res.ok) {
+        setOllamaConnected(false);
+        return;
+      }
+      setOllamaConnected(data.connected === true);
+    } catch {
+      setOllamaConnected(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchOllamaHealth();
+    const id = window.setInterval(() => void fetchOllamaHealth(), OLLAMA_HEALTH_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [fetchOllamaHealth]);
+
+  const ollamaReady = ollamaConnected === true;
+  const ollamaDisconnected = ollamaConnected === false;
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +259,7 @@ export default function App() {
     options: { rebuildModelMessages: boolean },
   ) => {
     if (!messageText.trim() || !activeSessionId) return;
+    if (!ollamaReady) return;
 
     const msg = messageText.trim();
     setChatPending(true);
@@ -331,6 +358,7 @@ export default function App() {
     if (e) e.preventDefault();
     if (!input.trim() || !activeSessionId) return;
     const msg = input.trim();
+    if (!ollamaReady) return;
     setInput("");
     await runChatTurn(messages, msg, { rebuildModelMessages: false });
   };
@@ -348,7 +376,10 @@ export default function App() {
   };
 
   const toggleDebug = () => {
-    if (!debugOpen && activeSessionId) fetchDebugData(activeSessionId);
+    if (!debugOpen && activeSessionId) {
+      void fetchOllamaHealth();
+      fetchDebugData(activeSessionId);
+    }
     setDebugOpen(!debugOpen);
   };
 
@@ -399,7 +430,17 @@ export default function App() {
   const sidebarCols = sidebarCollapsed ? "72px minmax(0, 1fr)" : "260px minmax(0, 1fr)";
 
   return (
-    <div className="h-screen overflow-hidden">
+    <>
+      {ollamaDisconnected && (
+        <div
+          className="ui-animate-fade-in fixed inset-x-0 top-0 z-[60] flex h-9 items-center justify-center border-b border-red-500/20 bg-red-950/55 px-4 text-center text-[0.75rem] font-medium leading-none text-red-100/95 backdrop-blur-md backdrop-saturate-150 [box-shadow:inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
+          role="status"
+          aria-live="polite"
+        >
+          Ollama is disconnected — start Ollama to send messages.
+        </div>
+      )}
+      <div className={cx("h-screen overflow-hidden", ollamaDisconnected && "pt-9")}>
       <div
         className="grid h-full max-[900px]:grid-cols-1 min-[901px]:overflow-hidden min-[901px]:transition-[grid-template-columns] min-[901px]:duration-300 min-[901px]:ease-[cubic-bezier(0.22,1,0.36,1)] min-[901px]:[grid-template-columns:var(--app-sidebar-cols)]"
         style={{ ["--app-sidebar-cols" as string]: sidebarCols } as CSSProperties}
@@ -495,6 +536,7 @@ export default function App() {
                   streamingSteps={streamingSteps}
                   streamingStep={streamingStep}
                   chatPending={chatPending}
+                  ollamaReady={ollamaReady}
                   input={input}
                   setInput={setInput}
                   onSendMessage={sendMessage}
@@ -553,7 +595,9 @@ export default function App() {
         </main>
       </div>
 
-      {debugOpen && <DebugModal data={debugData} onClose={() => setDebugOpen(false)} />}
+      {debugOpen && (
+        <DebugModal data={debugData} ollamaConnected={ollamaConnected} onClose={() => setDebugOpen(false)} />
+      )}
       {modalSteps && modalSteps.length > 0 && <StepsModal steps={modalSteps} onClose={() => setStepsModalData(null)} />}
       {renameSessionId && (
         <RenameSessionModal
@@ -579,6 +623,7 @@ export default function App() {
           onConfirm={performDeleteSession}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }

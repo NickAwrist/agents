@@ -20,6 +20,18 @@ app.get("/api/agent/system-prompt", (_req, res) => {
   res.json({ systemPrompt: session.getSystemPromptForDebug() });
 });
 
+app.get("/api/ollama/health", async (_req, res) => {
+  try {
+    await ollama.list();
+    res.json({ connected: true });
+  } catch (e) {
+    res.json({
+      connected: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+});
+
 app.get("/api/models", async (_req, res) => {
   try {
     const { models } = await ollama.list();

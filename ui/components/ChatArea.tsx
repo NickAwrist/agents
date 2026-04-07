@@ -77,6 +77,7 @@ export function ChatArea({
   streamingSteps,
   streamingStep,
   chatPending,
+  ollamaReady,
   input,
   setInput,
   onSendMessage,
@@ -91,6 +92,7 @@ export function ChatArea({
   streamingSteps: MessageStep[];
   streamingStep: MessageStep | null;
   chatPending: boolean;
+  ollamaReady: boolean;
   input: string;
   setInput: (v: string) => void;
   onSendMessage: (e: React.FormEvent) => void;
@@ -105,6 +107,7 @@ export function ChatArea({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
+  const canSend = ollamaReady && !isBusy;
 
   const syncInputHeight = useCallback(() => {
     const el = inputRef.current;
@@ -216,7 +219,7 @@ export function ChatArea({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  onSendMessage(e);
+                  if (canSend) onSendMessage(e);
                 }
               }}
               disabled={isBusy}
@@ -226,7 +229,7 @@ export function ChatArea({
             />
             <button
               type="submit"
-              disabled={!input.trim() || isBusy}
+              disabled={!input.trim() || !canSend}
               className={cx(primaryButton, "size-9 shrink-0 justify-center rounded-lg p-0")}
               aria-label="Send message"
             >
