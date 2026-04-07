@@ -1,9 +1,8 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, Bot } from "lucide-react";
+import { useCallback, useLayoutEffect, useRef } from "react";
+import { Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
 import { traceStepsForDisplay } from "./StepsModal";
-import { cx, primaryButton } from "../styles";
 
 function startCase(value: string) {
   return value
@@ -78,10 +77,7 @@ export function ChatArea({
   streamingSteps,
   streamingStep,
   chatPending,
-  ollamaReady,
-  input,
-  setInput,
-  onSendMessage,
+  footerInset,
   onViewSteps,
   editingUserIndex,
   onStartEditUser,
@@ -93,10 +89,7 @@ export function ChatArea({
   streamingSteps: MessageStep[];
   streamingStep: MessageStep | null;
   chatPending: boolean;
-  ollamaReady: boolean;
-  input: string;
-  setInput: (v: string) => void;
-  onSendMessage: (e: React.FormEvent) => void;
+  footerInset: number;
   onViewSteps: (steps: MessageStep[] | "live") => void;
   editingUserIndex: number | null;
   onStartEditUser: (index: number) => void;
@@ -105,43 +98,8 @@ export function ChatArea({
   onRequestRetryConfirm: (userIndex: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const footerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [footerInset, setFooterInset] = useState(104);
   const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
-  const canSend = ollamaReady && !isBusy;
-
-  const syncInputHeight = useCallback(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    const maxPx = window.innerHeight * 0.3;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
-  }, []);
-
-  useLayoutEffect(() => {
-    syncInputHeight();
-  }, [input, syncInputHeight]);
-
-  useLayoutEffect(() => {
-    const onResize = () => syncInputHeight();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [syncInputHeight]);
-
-  useLayoutEffect(() => {
-    const el = footerRef.current;
-    if (!el) return;
-    const measure = () => {
-      const h = el.offsetHeight;
-      if (h > 0) setFooterInset(h);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   const scrollMessagesToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -165,7 +123,7 @@ export function ChatArea({
   }, [messages, streamingStep, streamingSteps, scrollMessagesToBottom]);
 
   return (
-    <div className="relative h-full min-h-0 flex-1 overflow-hidden">
+    <div className="relative h-full min-h-0 flex-1 overflow-x-hidden">
       <div
         ref={scrollRef}
         className="absolute inset-0 z-0 overflow-x-hidden overflow-y-auto px-5 pt-[calc(3.5rem+1.25rem)] max-[640px]:px-3.5 max-[640px]:pt-[calc(52px+1rem)]"
@@ -230,43 +188,6 @@ export function ChatArea({
               </div>
             )}
         </div>
-      </div>
-
-      <div
-        ref={footerRef}
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center border-t border-border-subtle/60 bg-background/[0.16] px-5 pb-4 pt-3 shadow-[0_-1px_0_0_rgba(255,255,255,0.03)] backdrop-blur-[28px] backdrop-saturate-125 max-[640px]:px-3.5 max-[640px]:pb-3.5 max-[640px]:pt-2.5"
-      >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onSendMessage(e);
-            }}
-            className="pointer-events-auto flex w-full max-w-3xl items-center gap-2 rounded-xl border border-border-subtle bg-surface px-[14px] py-[6px] pr-[6px] focus-within:border-border focus-within:shadow-[0_0_0_1px_var(--color-accent-ring)]"
-          >
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (canSend) onSendMessage(e);
-                }
-              }}
-              disabled={isBusy}
-              placeholder="Send a message…"
-              className="min-h-10 max-h-[30vh] w-full flex-1 resize-none overflow-y-auto bg-transparent py-2.5 text-[0.9375rem] leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              rows={1}
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || !canSend}
-              className={cx(primaryButton, "size-9 shrink-0 justify-center rounded-lg p-0")}
-              aria-label="Send message"
-            >
-              <ArrowUp size={18} />
-            </button>
-          </form>
       </div>
     </div>
   );

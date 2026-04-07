@@ -1,7 +1,8 @@
-import { type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { TruncateConfirmModal } from "./components/TruncateConfirmModal";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
+import { ChatInputDock } from "./components/ChatInputDock";
 import { StepsModal, traceStepsForDisplay } from "./components/StepsModal";
 import { DebugModal } from "./components/DebugModal";
 import { RenameSessionModal } from "./components/RenameSessionModal";
@@ -15,6 +16,7 @@ import { useAppKeybinds } from "./hooks/useAppKeybinds";
 
 export default function App() {
   const app = useChatApp();
+  const [chatFooterInset, setChatFooterInset] = useState(104);
 
   const stepsModalOpen =
     app.stepsModalData != null &&
@@ -86,7 +88,7 @@ export default function App() {
               onToggleDebug={app.toggleDebug}
             />
 
-            <section className={cx("flex h-full min-h-0 overflow-hidden", !app.activeSessionId && "pt-0")}>
+            <section className={cx("flex h-full min-h-0 overflow-x-hidden", !app.activeSessionId && "pt-0")}>
               {app.activeSessionId ? (
                 <div
                   key={app.activeSessionId}
@@ -97,10 +99,7 @@ export default function App() {
                     streamingSteps={app.streamingSteps}
                     streamingStep={app.streamingStep}
                     chatPending={app.chatPending}
-                    ollamaReady={app.ollamaReady}
-                    input={app.input}
-                    setInput={app.setInput}
-                    onSendMessage={app.sendMessage}
+                    footerInset={chatFooterInset}
                     onViewSteps={app.setStepsModalData}
                     editingUserIndex={app.editingUserIndex}
                     onStartEditUser={app.setEditingUserIndex}
@@ -121,6 +120,20 @@ export default function App() {
                 />
               )}
             </section>
+
+            {app.activeSessionId && (
+              <ChatInputDock
+                key={app.activeSessionId}
+                input={app.input}
+                setInput={app.setInput}
+                onSendMessage={app.sendMessage}
+                chatPending={app.chatPending}
+                streamingStep={app.streamingStep}
+                streamingSteps={app.streamingSteps}
+                ollamaReady={app.ollamaReady}
+                onFooterHeightChange={setChatFooterInset}
+              />
+            )}
           </main>
         </div>
 
