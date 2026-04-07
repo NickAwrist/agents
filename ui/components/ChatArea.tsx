@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { ArrowUp, Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
@@ -101,7 +101,7 @@ export function ChatArea({
   onRequestEditConfirm: (userIndex: number, text: string) => void;
   onRequestRetryConfirm: (userIndex: number) => void;
 }) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
@@ -124,14 +124,34 @@ export function ChatArea({
     return () => window.removeEventListener("resize", onResize);
   }, [syncInputHeight]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, streamingStep, streamingSteps]);
+  const scrollMessagesToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, []);
+
+  useLayoutEffect(() => {
+    scrollMessagesToBottom();
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      scrollMessagesToBottom();
+      requestAnimationFrame(() => {
+        if (!cancelled) scrollMessagesToBottom();
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, streamingStep, streamingSteps, scrollMessagesToBottom]);
 
   return (
     <div className="h-full min-h-0 flex-1">
       <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
-        <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pb-6 pt-5 max-[640px]:px-3.5 max-[640px]:pb-5 max-[640px]:pt-4">
+        <div
+          ref={scrollRef}
+          className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pb-3 pt-[calc(3.5rem+1.25rem)] max-[640px]:px-3.5 max-[640px]:pb-3 max-[640px]:pt-[calc(52px+1rem)]"
+        >
           <div className="mx-auto flex min-h-min w-full max-w-3xl flex-col">
             {messages.length === 0 && (
               <div className="flex items-center gap-2 bg-transparent py-8 text-[0.875rem] text-muted-foreground">
@@ -178,8 +198,6 @@ export function ChatArea({
                 )}
               </div>
             )}
-
-            <div ref={bottomRef} />
           </div>
         </div>
 

@@ -431,7 +431,7 @@ export default function App() {
             className={cx(
               "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between gap-3 px-4 max-[640px]:h-[52px] max-[640px]:px-3.5",
               activeSessionId &&
-                "border-b border-border-subtle/80 bg-background/40 shadow-[0_1px_0_0_rgba(255,255,255,0.05)] backdrop-blur-2xl backdrop-saturate-150",
+                "border-b border-border-subtle/60 bg-background/[0.12] shadow-[0_1px_0_0_rgba(255,255,255,0.03)] backdrop-blur-lg backdrop-saturate-125",
             )}
           >
             <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-2">
@@ -471,11 +471,7 @@ export default function App() {
           </div>
 
           <section
-            className={cx(
-              "flex h-full min-h-0 overflow-hidden",
-              !activeSessionId && "pt-0",
-              activeSessionId && "max-[900px]:pt-14 max-[640px]:pt-[52px] min-[901px]:pt-14",
-            )}
+            className={cx("flex h-full min-h-0 overflow-hidden", !activeSessionId && "pt-0")}
           >
             {activeSessionId ? (
               <div key={activeSessionId} className="ui-animate-fade-in flex h-full min-h-0 min-w-0 flex-1 flex-col">
