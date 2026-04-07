@@ -426,15 +426,12 @@ export default function App() {
           aria-label="Close sidebar"
         />
 
-        <main className="@container/chat-main relative min-h-0 min-w-0 bg-background">
+        <main className="relative min-h-0 min-w-0 bg-background">
           <div
             className={cx(
               "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between gap-3 px-4 max-[640px]:h-[52px] max-[640px]:px-3.5",
               activeSessionId &&
-                cx(
-                  "border-b border-border-subtle/80 bg-background/40 shadow-[0_1px_0_0_rgba(255,255,255,0.05)] backdrop-blur-2xl backdrop-saturate-150",
-                  "@min-[1340px]/chat-main:border-border-subtle/50 @min-[1340px]/chat-main:bg-background/30 @min-[1340px]/chat-main:pb-2 @min-[1340px]/chat-main:shadow-[0_8px_40px_-12px_rgba(0,0,0,0.55)]",
-                ),
+                "border-b border-border-subtle/80 bg-background/40 shadow-[0_1px_0_0_rgba(255,255,255,0.05)] backdrop-blur-2xl backdrop-saturate-150",
             )}
           >
             <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-2">
@@ -477,8 +474,7 @@ export default function App() {
             className={cx(
               "flex h-full min-h-0 overflow-hidden",
               !activeSessionId && "pt-0",
-              activeSessionId &&
-                "max-[900px]:pt-14 max-[640px]:pt-[52px] min-[901px]:pt-14 @min-[1340px]/chat-main:pt-0",
+              activeSessionId && "max-[900px]:pt-14 max-[640px]:pt-[52px] min-[901px]:pt-14",
             )}
           >
             {activeSessionId ? (

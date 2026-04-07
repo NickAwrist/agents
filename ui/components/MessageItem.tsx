@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Bot, Check, Copy, Pencil, RotateCcw, Send, Waypoints, X } from "lucide-react";
+import { Check, Copy, Pencil, RotateCcw, Send, Waypoints, X } from "lucide-react";
 import type { Message } from "../types";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { cx } from "../styles";
 
 const msgIconBtn =
-  "inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-transparent text-muted-foreground transition-[color,background-color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40";
+  "inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-transparent text-muted-foreground transition-[color,background-color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40";
+
+const msgIconSize = 12;
+const msgIconStroke = 2;
 
 export function MessageItem({
   message,
@@ -120,7 +123,11 @@ export function MessageItem({
                 title={copied ? "Copied" : "Copy"}
                 aria-label={copied ? "Copied" : "Copy message"}
               >
-                {copied ? <Check size={15} strokeWidth={2.25} /> : <Copy size={15} strokeWidth={2.25} />}
+                {copied ? (
+                  <Check size={msgIconSize} strokeWidth={msgIconStroke} />
+                ) : (
+                  <Copy size={msgIconSize} strokeWidth={msgIconStroke} />
+                )}
               </button>
               <button
                 type="button"
@@ -130,7 +137,7 @@ export function MessageItem({
                 title="Retry"
                 aria-label="Retry from this message; later messages will be deleted"
               >
-                <RotateCcw size={15} strokeWidth={2.25} />
+                <RotateCcw size={msgIconSize} strokeWidth={msgIconStroke} />
               </button>
               <button
                 type="button"
@@ -140,7 +147,7 @@ export function MessageItem({
                 title="Edit"
                 aria-label="Edit message and retry"
               >
-                <Pencil size={15} strokeWidth={2.25} />
+                <Pencil size={msgIconSize} strokeWidth={msgIconStroke} />
               </button>
             </div>
           ) : (
@@ -153,7 +160,7 @@ export function MessageItem({
                 title="Cancel editing"
                 aria-label="Cancel editing"
               >
-                <X size={15} strokeWidth={2.25} />
+                <X size={msgIconSize} strokeWidth={msgIconStroke} />
               </button>
               <button
                 type="button"
@@ -163,7 +170,7 @@ export function MessageItem({
                 title="Save and retry"
                 aria-label="Save edits and retry; later messages will be deleted"
               >
-                <Send size={15} strokeWidth={2.25} />
+                <Send size={msgIconSize} strokeWidth={msgIconStroke} />
               </button>
             </div>
           )}
@@ -174,33 +181,47 @@ export function MessageItem({
 
   return (
     <div
-      className="ui-animate-slide-up flex items-start gap-3 max-[640px]:gap-2.5"
+      className="group/msg ui-animate-slide-up flex w-full min-w-0 flex-col"
       style={enterStyle}
     >
-      <div
-        className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent max-[640px]:size-[26px]"
-        aria-hidden
-      >
-        <Bot size={14} />
+      <div className="flex w-full justify-start pt-4 max-[640px]:pt-3.5" aria-hidden>
+        <div className="h-px w-9 max-[640px]:w-8 shrink-0 rounded-full bg-border-subtle/70" />
       </div>
-      <div className="max-w-[min(100%,42rem)] min-w-0">
-        <div className="mb-1.5 flex items-center gap-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-          <span>Assistant</span>
-        </div>
+      <div className="max-w-[min(100%,42rem)] min-w-0 pt-2">
         <MarkdownMessage className="text-foreground">{message.content}</MarkdownMessage>
 
-        {message.steps && message.steps.length > 0 && onViewSteps && (
+        <div
+          className={cx(
+            "mt-2 flex flex-wrap items-center gap-1",
+            "opacity-0 transition-opacity duration-300 ease-out",
+            "group-hover/msg:opacity-100 focus-within:opacity-100",
+          )}
+        >
           <button
             type="button"
-            onClick={onViewSteps}
-            className={cx(
-              "mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-transparent px-2.5 py-1.5 text-[0.75rem] text-muted-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-accent-soft hover:text-accent active:scale-[0.98] active:bg-accent-soft-strong",
-            )}
+            onClick={() => void copyContent()}
+            className={msgIconBtn}
+            title={copied ? "Copied" : "Copy"}
+            aria-label={copied ? "Copied" : "Copy message"}
           >
-            <Waypoints size={13} />
-            View trace
+            {copied ? (
+              <Check size={msgIconSize} strokeWidth={msgIconStroke} />
+            ) : (
+              <Copy size={msgIconSize} strokeWidth={msgIconStroke} />
+            )}
           </button>
-        )}
+          {message.steps && message.steps.length > 0 && onViewSteps && (
+            <button
+              type="button"
+              onClick={onViewSteps}
+              className={msgIconBtn}
+              title="View trace"
+              aria-label="View trace"
+            >
+              <Waypoints size={msgIconSize} strokeWidth={msgIconStroke} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

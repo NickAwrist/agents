@@ -131,7 +131,7 @@ export function ChatArea({
   return (
     <div className="h-full min-h-0 flex-1">
       <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
-        <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pb-6 pt-5 max-[640px]:px-3.5 max-[640px]:pb-5 max-[640px]:pt-4 @min-[1340px]/chat-main:scroll-pt-14 @min-[1340px]/chat-main:pt-14">
+        <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pb-6 pt-5 max-[640px]:px-3.5 max-[640px]:pb-5 max-[640px]:pt-4">
           <div className="mx-auto flex min-h-min w-full max-w-3xl flex-col">
             {messages.length === 0 && (
               <div className="flex items-center gap-2 bg-transparent py-8 text-[0.875rem] text-muted-foreground">
