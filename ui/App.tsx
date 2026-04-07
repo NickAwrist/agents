@@ -11,6 +11,11 @@ import { cx, iconButton, primaryButton } from "./styles";
 import { loadChatsV1, removeStoredSession, upsertStoredSession } from "./persist/chats";
 import { storedSessionToSummary } from "./persist/preview";
 
+function isStoredSessionEmpty(id: string): boolean {
+  const row = loadChatsV1().find((s) => s.id === id);
+  return !row?.history?.length;
+}
+
 function readSseBlocks(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   onData: (obj: Record<string, unknown>) => void,
@@ -73,9 +78,33 @@ export default function App() {
     refreshSessions();
   }, [refreshSessions]);
 
+  const loadSession = (id: string) => {
+    setActiveSessionId(id);
+    setMessages([]);
+    setStreamingStep(null);
+    setStreamingSteps([]);
+    setEditingUserIndex(null);
+    setTruncateConfirm(null);
+    const stored = loadChatsV1().find((s) => s.id === id);
+    if (stored?.history?.length) {
+      setMessages(stored.history);
+    }
+  };
+
+  const switchToSession = (id: string) => {
+    if (activeSessionId && activeSessionId !== id && isStoredSessionEmpty(activeSessionId)) {
+      removeStoredSession(activeSessionId);
+      refreshSessions();
+    }
+    loadSession(id);
+  };
+
   const createSession = () => {
     setIsLoading(true);
     try {
+      if (activeSessionId && isStoredSessionEmpty(activeSessionId)) {
+        removeStoredSession(activeSessionId);
+      }
       const id = crypto.randomUUID();
       upsertStoredSession({
         id,
@@ -91,19 +120,6 @@ export default function App() {
       console.error(e);
     }
     setIsLoading(false);
-  };
-
-  const loadSession = (id: string) => {
-    setActiveSessionId(id);
-    setMessages([]);
-    setStreamingStep(null);
-    setStreamingSteps([]);
-    setEditingUserIndex(null);
-    setTruncateConfirm(null);
-    const stored = loadChatsV1().find((s) => s.id === id);
-    if (stored?.history?.length) {
-      setMessages(stored.history);
-    }
   };
 
   useEffect(() => {
@@ -255,14 +271,7 @@ export default function App() {
     setDebugOpen(!debugOpen);
   };
 
-  const requestDeleteSession = (id: string) => {
-    setPendingDeleteSessionId(id);
-  };
-
-  const performDeleteSession = () => {
-    const id = pendingDeleteSessionId;
-    setPendingDeleteSessionId(null);
-    if (!id) return;
+  const dropSessionFromApp = (id: string) => {
     removeStoredSession(id);
     if (activeSessionId === id) {
       setActiveSessionId(null);
@@ -273,6 +282,21 @@ export default function App() {
       setTruncateConfirm(null);
     }
     refreshSessions();
+  };
+
+  const requestDeleteSession = (id: string) => {
+    if (isStoredSessionEmpty(id)) {
+      dropSessionFromApp(id);
+      return;
+    }
+    setPendingDeleteSessionId(id);
+  };
+
+  const performDeleteSession = () => {
+    const id = pendingDeleteSessionId;
+    setPendingDeleteSessionId(null);
+    if (!id) return;
+    dropSessionFromApp(id);
   };
 
   const saveSessionTitle = (title: string) => {
@@ -312,7 +336,7 @@ export default function App() {
             activeSessionId={activeSessionId}
             onSelectSession={(id) => {
               setSidebarOpen(false);
-              loadSession(id);
+              switchToSession(id);
             }}
             onNewSession={createSession}
             onRenameSession={(id) => setRenameSessionId(id)}
@@ -412,7 +436,7 @@ export default function App() {
                           <button
                             type="button"
                             className="flex w-full items-center justify-between gap-3 rounded-lg border border-border-subtle bg-surface px-3 py-2.5 text-left text-[0.8125rem] transition-[color,background-color,border-color,transform] duration-150 ease-out hover:border-border hover:bg-muted active:scale-[0.99] active:bg-muted/80"
-                            onClick={() => loadSession(s.id)}
+                            onClick={() => switchToSession(s.id)}
                           >
                             <span className="min-w-0 truncate whitespace-nowrap font-medium text-foreground">{s.preview || "Chat"}</span>
                             <span className="shrink-0 text-[0.75rem] text-muted-foreground">{new Date(s.updatedAt).toLocaleDateString()}</span>
