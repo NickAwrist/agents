@@ -210,7 +210,7 @@ export function ChatArea({
               e.preventDefault();
               onSendMessage(e);
             }}
-            className="flex w-full max-w-3xl items-end gap-2 rounded-xl border border-border-subtle bg-surface px-[14px] py-[6px] pr-[6px] focus-within:border-border focus-within:shadow-[0_0_0_1px_var(--color-accent-ring)]"
+            className="flex w-full max-w-3xl items-center gap-2 rounded-xl border border-border-subtle bg-surface px-[14px] py-[6px] pr-[6px] focus-within:border-border focus-within:shadow-[0_0_0_1px_var(--color-accent-ring)]"
           >
             <textarea
               ref={inputRef}
