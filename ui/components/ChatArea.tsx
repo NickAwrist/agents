@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { ArrowUp, Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
@@ -102,8 +102,27 @@ export function ChatArea({
   onRequestRetryConfirm: (userIndex: number) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
+
+  const syncInputHeight = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const maxPx = window.innerHeight * 0.3;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    syncInputHeight();
+  }, [input, syncInputHeight]);
+
+  useLayoutEffect(() => {
+    const onResize = () => syncInputHeight();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [syncInputHeight]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -173,6 +192,7 @@ export function ChatArea({
             className="flex w-full max-w-3xl items-end gap-2 rounded-xl border border-border-subtle bg-surface px-[14px] py-[6px] pr-[6px] focus-within:border-border focus-within:shadow-[0_0_0_1px_var(--color-accent-ring)]"
           >
             <textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -183,7 +203,7 @@ export function ChatArea({
               }}
               disabled={isBusy}
               placeholder="Send a message…"
-              className="min-h-10 max-h-[200px] w-full flex-1 bg-transparent py-2.5 text-[0.9375rem] leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-10 max-h-[30vh] w-full flex-1 resize-none overflow-y-auto bg-transparent py-2.5 text-[0.9375rem] leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               rows={1}
             />
             <button
