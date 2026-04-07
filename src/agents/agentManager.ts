@@ -16,6 +16,7 @@ import { SoftwareEngAgentTool } from "../tools/software_eng_agent";
 import { WebSearchTool } from "../tools/web_search";
 import { BashTool } from "../tools/bash";
 import type { BaseTool } from '../tools/BaseTool';
+import type { RunContext } from '../RunContext';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +25,16 @@ const agentsJsonPath = path.join(__dirname, 'agents.json');
 const agentsData = JSON.parse(fs.readFileSync(agentsJsonPath, 'utf8'));
 
 export const agentManager = {
+  /** Subagents inherit the parent agent's Ollama model when `ctx` is provided. */
+  createAgentForContext(agentName: string, ctx?: RunContext): BaseAgent {
+    const agent = this.createAgent(agentName);
+    const parentModel = ctx?.agentInstance?.model;
+    if (typeof parentModel === "string" && parentModel.length > 0) {
+      agent.model = parentModel;
+    }
+    return agent;
+  },
+
   createAgent(agentName: string): BaseAgent {
     const config = agentsData.agents.find((a: any) => a.name === agentName);
     if (!config) {

@@ -42,7 +42,7 @@ export class ComputerAgentTool extends BaseTool {
         : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
-    const computerAgent = agentManager.createAgent("computer_agent");
+    const computerAgent = agentManager.createAgentForContext("computer_agent", ctx);
     const childCtx = ctx?.createChild(computerAgent, task);
     return computerAgent.run(task, childCtx);
   }

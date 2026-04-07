@@ -42,7 +42,7 @@ export class CodeDiscoveryAgentTool extends BaseTool {
         : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
-    const codeDiscoveryAgent = agentManager.createAgent("code_discovery_agent");
+    const codeDiscoveryAgent = agentManager.createAgentForContext("code_discovery_agent", ctx);
     // Providing a recognizable child context name
     const childCtx = ctx?.createChild(codeDiscoveryAgent, task);
     return codeDiscoveryAgent.run(task, childCtx);

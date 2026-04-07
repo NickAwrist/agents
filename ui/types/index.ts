@@ -30,6 +30,14 @@ export interface Message {
   steps?: MessageStep[];
 }
 
+/** Entry from GET /api/models */
+export interface OllamaModelOption {
+  name: string;
+  size?: number;
+  modified_at?: string;
+  digest?: string;
+}
+
 export interface DebugData {
   systemPrompt: string;
   history: Message[];

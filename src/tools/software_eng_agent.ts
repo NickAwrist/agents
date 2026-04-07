@@ -42,7 +42,7 @@ export class SoftwareEngAgentTool extends BaseTool {
         : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
-    const softwareEngAgent = agentManager.createAgent("coding_agent");
+    const softwareEngAgent = agentManager.createAgentForContext("coding_agent", ctx);
     // Providing a recognizable child context name
     const childCtx = ctx?.createChild(softwareEngAgent, task);
     return softwareEngAgent.run(task, childCtx);

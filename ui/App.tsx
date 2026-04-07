@@ -3,12 +3,14 @@ import { TruncateConfirmModal } from "./components/TruncateConfirmModal";
 import { Bug, MessageSquarePlus, PanelLeft, Sparkles, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
+import { ModelSelectBar } from "./components/ModelSelectBar";
 import { StepsModal } from "./components/StepsModal";
 import { DebugModal } from "./components/DebugModal";
 import { RenameSessionModal } from "./components/RenameSessionModal";
-import type { SessionSummary, Message, MessageStep, DebugData } from "./types";
+import type { SessionSummary, Message, MessageStep, DebugData, OllamaModelOption } from "./types";
 import { cx, iconButton, primaryButton } from "./styles";
 import { loadChatsV1, removeStoredSession, upsertStoredSession } from "./persist/chats";
+import { loadPreferredModel, savePreferredModel } from "./persist/modelPreference";
 import { storedSessionToSummary } from "./persist/preview";
 
 function isStoredSessionEmpty(id: string): boolean {
@@ -64,8 +66,71 @@ export default function App() {
   >(null);
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
   const [chatPending, setChatPending] = useState(false);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModelOption[]>([]);
+  const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
+  const [serverDefaultModel, setServerDefaultModel] = useState("gemma4:31b");
+  const [selectedModel, setSelectedModel] = useState(() => loadPreferredModel("gemma4:31b"));
   const debugOpenRef = useRef(false);
   debugOpenRef.current = debugOpen;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/models");
+        const data = (await res.json()) as {
+          models?: unknown;
+          defaultModel?: string;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setModelsLoadError(typeof data.error === "string" ? data.error : res.statusText);
+          setOllamaModels([]);
+          return;
+        }
+        setModelsLoadError(null);
+        const raw = Array.isArray(data.models) ? data.models : [];
+        const list: OllamaModelOption[] = raw
+          .filter((m): m is Record<string, unknown> => m != null && typeof m === "object")
+          .map((m) => m.name)
+          .filter((n): n is string => typeof n === "string" && n.length > 0)
+          .map((name) => ({ name }));
+        setOllamaModels(list);
+        if (typeof data.defaultModel === "string" && data.defaultModel.trim()) {
+          setServerDefaultModel(data.defaultModel.trim());
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setModelsLoadError(e instanceof Error ? e.message : String(e));
+          setOllamaModels([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const stored = loadChatsV1().find((s) => s.id === activeSessionId);
+    const preference = stored?.model?.trim() || loadPreferredModel(serverDefaultModel);
+    const names = new Set(ollamaModels.map((m) => m.name));
+    let next = preference;
+    if (names.size > 0 && !names.has(next)) {
+      next = names.has(serverDefaultModel) ? serverDefaultModel : (ollamaModels[0]?.name ?? next);
+    }
+    setSelectedModel(next);
+  }, [activeSessionId, ollamaModels, serverDefaultModel]);
+
+  const handleModelChange = useCallback((model: string) => {
+    setSelectedModel(model);
+    savePreferredModel(model);
+    if (activeSessionId) {
+      upsertStoredSession({ id: activeSessionId, model, updatedAt: Date.now() });
+    }
+  }, [activeSessionId]);
 
   const refreshSessions = useCallback(() => {
     const list = loadChatsV1()
@@ -191,6 +256,7 @@ export default function App() {
           body: JSON.stringify({
             message: msg,
             history: priorMessages,
+            model: selectedModel,
             modelMessages: modelMessagesPayload,
           }),
         });
@@ -313,6 +379,7 @@ export default function App() {
 
   const modalSteps = stepsModalData === "live" ? streamingSteps : stepsModalData;
   const renameTarget = renameSessionId ? sessions.find((s) => s.id === renameSessionId) : null;
+  const headerChatBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
 
   const sidebarCols = sidebarCollapsed ? "72px minmax(0, 1fr)" : "260px minmax(0, 1fr)";
 
@@ -359,34 +426,61 @@ export default function App() {
           aria-label="Close sidebar"
         />
 
-        <main className="relative min-h-0 min-w-0 bg-background">
-          <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2.5 max-[640px]:left-3.5 max-[640px]:top-3.5 min-[901px]:hidden">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className={cx(iconButton, "pointer-events-auto")}
-              title="Open chats"
-              aria-expanded={sidebarOpen}
-              aria-controls="app-sidebar"
-            >
-              <PanelLeft size={18} />
-            </button>
-          </div>
-          <div className="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-2.5 max-[640px]:right-3.5 max-[640px]:top-3.5">
-            {activeSessionId && (
+        <main className="@container/chat-main relative min-h-0 min-w-0 bg-background">
+          <div
+            className={cx(
+              "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between gap-3 px-4 max-[640px]:h-[52px] max-[640px]:px-3.5",
+              activeSessionId &&
+                cx(
+                  "border-b border-border-subtle/80 bg-background/40 shadow-[0_1px_0_0_rgba(255,255,255,0.05)] backdrop-blur-2xl backdrop-saturate-150",
+                  "@min-[1340px]/chat-main:border-border-subtle/50 @min-[1340px]/chat-main:bg-background/30 @min-[1340px]/chat-main:pb-2 @min-[1340px]/chat-main:shadow-[0_8px_40px_-12px_rgba(0,0,0,0.55)]",
+                ),
+            )}
+          >
+            <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-2">
               <button
                 type="button"
-                onClick={toggleDebug}
-                className={cx(iconButton, "pointer-events-auto")}
-                title="Debug"
-                aria-pressed={debugOpen}
+                onClick={() => setSidebarOpen(true)}
+                className={cx(iconButton, "shrink-0 min-[901px]:hidden")}
+                title="Open chats"
+                aria-expanded={sidebarOpen}
+                aria-controls="app-sidebar"
               >
-                {debugOpen ? <X size={18} /> : <Bug size={18} />}
+                <PanelLeft size={18} />
               </button>
-            )}
+              {activeSessionId && (
+                <ModelSelectBar
+                  ollamaModels={ollamaModels}
+                  modelsLoadError={modelsLoadError}
+                  selectedModel={selectedModel}
+                  onModelChange={handleModelChange}
+                  disabled={headerChatBusy}
+                />
+              )}
+            </div>
+            <div className="pointer-events-auto flex shrink-0 items-center">
+              {activeSessionId && (
+                <button
+                  type="button"
+                  onClick={toggleDebug}
+                  className={cx(iconButton)}
+                  title="Debug"
+                  aria-pressed={debugOpen}
+                >
+                  {debugOpen ? <X size={18} /> : <Bug size={18} />}
+                </button>
+              )}
+            </div>
           </div>
 
-          <section className="flex h-full min-h-0 overflow-hidden pt-14 max-[640px]:pt-[52px]">
+          <section
+            className={cx(
+              "flex h-full min-h-0 overflow-hidden",
+              !activeSessionId && "pt-0",
+              activeSessionId &&
+                "max-[900px]:pt-14 max-[640px]:pt-[52px] min-[901px]:pt-14 @min-[1340px]/chat-main:pt-0",
+            )}
+          >
             {activeSessionId ? (
               <div key={activeSessionId} className="ui-animate-fade-in flex h-full min-h-0 min-w-0 flex-1 flex-col">
                 <ChatArea

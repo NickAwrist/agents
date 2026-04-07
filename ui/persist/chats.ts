@@ -9,6 +9,8 @@ export type StoredChatSession = {
   customTitle?: string | null;
   history: Message[];
   modelMessages?: Array<Record<string, unknown>> | null;
+  /** Ollama model used for this thread; falls back to global preference when unset. */
+  model?: string | null;
 };
 
 export function loadChatsV1(): StoredChatSession[] {
@@ -39,6 +41,7 @@ export function upsertStoredSession(patch: { id: string } & Partial<Omit<StoredC
       history: patch.history ?? cur.history,
       customTitle: patch.customTitle !== undefined ? patch.customTitle : cur.customTitle,
       modelMessages: patch.modelMessages !== undefined ? patch.modelMessages : cur.modelMessages,
+      model: patch.model !== undefined ? patch.model : cur.model,
     };
   } else {
     all.push({
@@ -48,6 +51,7 @@ export function upsertStoredSession(patch: { id: string } & Partial<Omit<StoredC
       history: patch.history ?? [],
       customTitle: patch.customTitle ?? null,
       modelMessages: patch.modelMessages,
+      model: patch.model,
     });
   }
   saveChatsV1(all);

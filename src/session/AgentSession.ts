@@ -9,11 +9,12 @@ export class AgentSession extends EventEmitter {
   public history: { role: string; content: string; steps?: HistoryWireStep[] }[] = [];
   private generalAgent: any;
 
-  constructor(sessionId: string) {
+  constructor(sessionId: string, options?: { model?: string }) {
     super();
     this.sessionId = sessionId;
-    // Instantiate the agent
     this.generalAgent = agentManager.createAgent("general_agent");
+    const m = options?.model?.trim();
+    if (m) this.generalAgent.model = m;
   }
 
   /** Rehydrate from client persistence (localStorage) after a server restart. */

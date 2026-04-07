@@ -98,12 +98,16 @@ export class BaseAgent {
         messages.push({ role: "user", content: prompt });
       }
 
-      // Call ollama 
+      const thinkOpt =
+        /gemma/i.test(this.model) || /qwen3/i.test(this.model)
+          ? ({ think: true as const } satisfies { think: true })
+          : {};
+
       response = await ollama.chat({
         model: this.model,
         messages,
         tools: this.tools.map((tool) => tool.toTool()),
-        think: true,
+        ...thinkOpt,
       });
 
       // Extract content, thinking, and tool calls from response

@@ -1,8 +1,11 @@
 import express from "express";
 import cors from "cors";
 import crypto from "crypto";
+import ollama from "ollama";
 import type { HistoryWireStep } from "./session/AgentSession";
 import { AgentSession } from "./session/AgentSession";
+
+const DEFAULT_CHAT_MODEL = "gemma4:31b";
 
 const app = express();
 app.use(cors());
@@ -17,10 +20,33 @@ app.get("/api/agent/system-prompt", (_req, res) => {
   res.json({ systemPrompt: session.getSystemPromptForDebug() });
 });
 
+app.get("/api/models", async (_req, res) => {
+  try {
+    const { models } = await ollama.list();
+    res.json({
+      defaultModel: DEFAULT_CHAT_MODEL,
+      models: models.map((m) => ({
+        name: m.name,
+        size: m.size,
+        modified_at: m.modified_at instanceof Date ? m.modified_at.toISOString() : String(m.modified_at),
+        digest: m.digest,
+        details: m.details,
+      })),
+    });
+  } catch (e) {
+    res.status(502).json({
+      error: e instanceof Error ? e.message : String(e),
+      defaultModel: DEFAULT_CHAT_MODEL,
+      models: [],
+    });
+  }
+});
+
 app.post("/api/chat", async (req, res) => {
   const body = req.body as {
     message?: unknown;
     history?: unknown;
+    model?: unknown;
     modelMessages?: Array<Record<string, unknown>> | null;
   };
   const message = typeof body.message === "string" ? body.message.trim() : "";
@@ -42,7 +68,10 @@ app.post("/api/chat", async (req, res) => {
     res.write(`:\n\n`);
   }, 15000);
 
-  const session = new AgentSession(crypto.randomUUID());
+  const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
+  const model = requestedModel || DEFAULT_CHAT_MODEL;
+
+  const session = new AgentSession(crypto.randomUUID(), { model });
   session.restoreFromPersistence({
     history: body.history as { role: string; content: string; steps?: HistoryWireStep[] }[],
     modelMessages: body.modelMessages,
