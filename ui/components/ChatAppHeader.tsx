@@ -33,7 +33,7 @@ export function ChatAppHeader({
       className={cx(
         "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between gap-3 px-4 max-[640px]:h-[52px] max-[640px]:px-3.5",
         activeSessionId &&
-          "border-b border-border-subtle/60 bg-background/[0.12] shadow-[0_1px_0_0_rgba(255,255,255,0.03)] backdrop-blur-lg backdrop-saturate-125",
+          "border-b border-border-subtle/60 bg-background/[0.16] shadow-[0_1px_0_0_rgba(255,255,255,0.03)] backdrop-blur-xl backdrop-saturate-125",
       )}
     >
       <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-2">

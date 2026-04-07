@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUp, Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
@@ -104,7 +104,9 @@ export function ChatArea({
   onRequestRetryConfirm: (userIndex: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [footerInset, setFooterInset] = useState(104);
   const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
   const canSend = ollamaReady && !isBusy;
@@ -126,6 +128,19 @@ export function ChatArea({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [syncInputHeight]);
+
+  useLayoutEffect(() => {
+    const el = footerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = el.offsetHeight;
+      if (h > 0) setFooterInset(h);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const scrollMessagesToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -149,13 +164,13 @@ export function ChatArea({
   }, [messages, streamingStep, streamingSteps, scrollMessagesToBottom]);
 
   return (
-    <div className="h-full min-h-0 flex-1">
-      <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
-        <div
-          ref={scrollRef}
-          className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-5 pb-3 pt-[calc(3.5rem+1.25rem)] max-[640px]:px-3.5 max-[640px]:pb-3 max-[640px]:pt-[calc(52px+1rem)]"
-        >
-          <div className="mx-auto flex min-h-min w-full max-w-3xl flex-col">
+    <div className="relative h-full min-h-0 flex-1 overflow-hidden">
+      <div
+        ref={scrollRef}
+        className="absolute inset-0 z-0 overflow-x-hidden overflow-y-auto px-5 pt-[calc(3.5rem+1.25rem)] max-[640px]:px-3.5 max-[640px]:pt-[calc(52px+1rem)]"
+        style={{ paddingBottom: footerInset }}
+      >
+        <div className="mx-auto flex min-h-min w-full max-w-3xl flex-col">
             {messages.length === 0 && (
               <div className="flex items-center gap-2 bg-transparent py-8 text-[0.875rem] text-muted-foreground">
                 <Bot size={14} />
@@ -201,16 +216,19 @@ export function ChatArea({
                 )}
               </div>
             )}
-          </div>
         </div>
+      </div>
 
-        <div className="flex justify-center border-t border-border-subtle bg-background px-5 pb-4 pt-3 max-[640px]:px-3.5 max-[640px]:pb-3.5 max-[640px]:pt-2.5">
+      <div
+        ref={footerRef}
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center border-t border-border-subtle/60 bg-background/[0.16] px-5 pb-4 pt-3 shadow-[0_-1px_0_0_rgba(255,255,255,0.03)] backdrop-blur-xl backdrop-saturate-125 max-[640px]:px-3.5 max-[640px]:pb-3.5 max-[640px]:pt-2.5"
+      >
           <form
             onSubmit={(e) => {
               e.preventDefault();
               onSendMessage(e);
             }}
-            className="flex w-full max-w-3xl items-center gap-2 rounded-xl border border-border-subtle bg-surface px-[14px] py-[6px] pr-[6px] focus-within:border-border focus-within:shadow-[0_0_0_1px_var(--color-accent-ring)]"
+            className="pointer-events-auto flex w-full max-w-3xl items-center gap-2 rounded-xl border border-border-subtle bg-surface px-[14px] py-[6px] pr-[6px] focus-within:border-border focus-within:shadow-[0_0_0_1px_var(--color-accent-ring)]"
           >
             <textarea
               ref={inputRef}
@@ -236,7 +254,6 @@ export function ChatArea({
               <ArrowUp size={18} />
             </button>
           </form>
-        </div>
       </div>
     </div>
   );
