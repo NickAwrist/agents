@@ -75,10 +75,10 @@ export function MessageItem({
   if (message.role === "user") {
     return (
       <div
-        className="ui-animate-slide-up flex justify-end border-b border-border-subtle py-[14px] last:border-b-0"
+        className="ui-animate-slide-up flex justify-end"
         style={enterStyle}
       >
-        <div className="flex w-full min-w-0 flex-col items-end">
+        <div className="group/msg flex w-full min-w-0 flex-col items-end">
           <div
             ref={bubbleRef}
             className={cx(
@@ -105,65 +105,68 @@ export function MessageItem({
               <MarkdownMessage className="text-foreground">{message.content}</MarkdownMessage>
             )}
           </div>
-          <div className="mt-1.5 flex max-w-[min(85%,36rem)] flex-wrap justify-end gap-1 self-end max-[640px]:max-w-[92%]">
-            <button
-              type="button"
-              onClick={() => void copyContent()}
-              className={msgIconBtn}
-              title={copied ? "Copied" : "Copy"}
-              aria-label={copied ? "Copied" : "Copy message"}
+          {!isEditingUser ? (
+            <div
+              className={cx(
+                "mt-1.5 flex max-w-[min(85%,36rem)] flex-wrap justify-end gap-1 self-end max-[640px]:max-w-[92%]",
+                "opacity-0 transition-opacity duration-300 ease-out",
+                "group-hover/msg:opacity-100 focus-within:opacity-100",
+              )}
             >
-              {copied ? <Check size={15} strokeWidth={2.25} /> : <Copy size={15} strokeWidth={2.25} />}
-            </button>
-            {!isEditingUser && (
-              <>
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => onRequestRetryConfirm(messageIndex)}
-                  className={msgIconBtn}
-                  title="Retry"
-                  aria-label="Retry from this message; later messages will be deleted"
-                >
-                  <RotateCcw size={15} strokeWidth={2.25} />
-                </button>
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={beginEdit}
-                  className={msgIconBtn}
-                  title="Edit"
-                  aria-label="Edit message and retry"
-                >
-                  <Pencil size={15} strokeWidth={2.25} />
-                </button>
-              </>
-            )}
-            {isEditingUser && (
-              <>
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={onCancelEditUser}
-                  className={msgIconBtn}
-                  title="Cancel editing"
-                  aria-label="Cancel editing"
-                >
-                  <X size={15} strokeWidth={2.25} />
-                </button>
-                <button
-                  type="button"
-                  disabled={isBusy || !draft.trim()}
-                  onClick={() => onRequestEditConfirm(messageIndex, draft.trim())}
-                  className={msgIconBtn}
-                  title="Save and retry"
-                  aria-label="Save edits and retry; later messages will be deleted"
-                >
-                  <Send size={15} strokeWidth={2.25} />
-                </button>
-              </>
-            )}
-          </div>
+              <button
+                type="button"
+                onClick={() => void copyContent()}
+                className={msgIconBtn}
+                title={copied ? "Copied" : "Copy"}
+                aria-label={copied ? "Copied" : "Copy message"}
+              >
+                {copied ? <Check size={15} strokeWidth={2.25} /> : <Copy size={15} strokeWidth={2.25} />}
+              </button>
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => onRequestRetryConfirm(messageIndex)}
+                className={msgIconBtn}
+                title="Retry"
+                aria-label="Retry from this message; later messages will be deleted"
+              >
+                <RotateCcw size={15} strokeWidth={2.25} />
+              </button>
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={beginEdit}
+                className={msgIconBtn}
+                title="Edit"
+                aria-label="Edit message and retry"
+              >
+                <Pencil size={15} strokeWidth={2.25} />
+              </button>
+            </div>
+          ) : (
+            <div className="mt-1.5 flex max-w-[min(85%,36rem)] flex-wrap justify-end gap-1 self-end max-[640px]:max-w-[92%]">
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={onCancelEditUser}
+                className={msgIconBtn}
+                title="Cancel editing"
+                aria-label="Cancel editing"
+              >
+                <X size={15} strokeWidth={2.25} />
+              </button>
+              <button
+                type="button"
+                disabled={isBusy || !draft.trim()}
+                onClick={() => onRequestEditConfirm(messageIndex, draft.trim())}
+                className={msgIconBtn}
+                title="Save and retry"
+                aria-label="Save edits and retry; later messages will be deleted"
+              >
+                <Send size={15} strokeWidth={2.25} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -171,7 +174,7 @@ export function MessageItem({
 
   return (
     <div
-      className="ui-animate-slide-up flex items-start gap-3 border-b border-border-subtle py-[14px] last:border-b-0 max-[640px]:gap-2.5"
+      className="ui-animate-slide-up flex items-start gap-3 max-[640px]:gap-2.5"
       style={enterStyle}
     >
       <div
