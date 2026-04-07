@@ -21,7 +21,7 @@ app.post("/api/chat", async (req, res) => {
   const body = req.body as {
     message?: unknown;
     history?: unknown;
-    modelMessages?: Array<Record<string, unknown>>;
+    modelMessages?: Array<Record<string, unknown>> | null;
   };
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) {

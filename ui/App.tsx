@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { TruncateConfirmModal } from "./components/TruncateConfirmModal";
 import { Bug, MessageSquarePlus, PanelLeft, Sparkles, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
@@ -52,6 +53,12 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
+  const [editingUserIndex, setEditingUserIndex] = useState<number | null>(null);
+  const [truncateConfirm, setTruncateConfirm] = useState<
+    { kind: "edit"; userIndex: number; text: string } | { kind: "retry"; userIndex: number } | null
+  >(null);
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
+  const [chatPending, setChatPending] = useState(false);
   const debugOpenRef = useRef(false);
   debugOpenRef.current = debugOpen;
 
@@ -91,6 +98,8 @@ export default function App() {
     setMessages([]);
     setStreamingStep(null);
     setStreamingSteps([]);
+    setEditingUserIndex(null);
+    setTruncateConfirm(null);
     const stored = loadChatsV1().find((s) => s.id === id);
     if (stored?.history?.length) {
       setMessages(stored.history);
@@ -122,18 +131,26 @@ export default function App() {
     }
   };
 
-  const sendMessage = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!input.trim() || !activeSessionId) return;
+  const runChatTurn = async (
+    priorMessages: Message[],
+    messageText: string,
+    options: { rebuildModelMessages: boolean },
+  ) => {
+    if (!messageText.trim() || !activeSessionId) return;
 
-    const msg = input.trim();
-    setInput("");
-    const priorMessages = messages;
-    const nextHistory = [...priorMessages, { role: "user" as const, content: msg }];
+    const msg = messageText.trim();
+    setChatPending(true);
+    setStreamingStep(null);
+    setStreamingSteps([]);
+
+    const nextHistory: Message[] = [...priorMessages, { role: "user" as const, content: msg }];
     setMessages(nextHistory);
-    upsertStoredSession({ id: activeSessionId, history: nextHistory, updatedAt: Date.now() });
-
-    const stored = loadChatsV1().find((s) => s.id === activeSessionId);
+    upsertStoredSession({
+      id: activeSessionId,
+      history: nextHistory,
+      updatedAt: Date.now(),
+      ...(options.rebuildModelMessages ? { modelMessages: null } : {}),
+    });
 
     const failWithAssistantError = (errText: string) => {
       const failedHistory: Message[] = [
@@ -146,64 +163,91 @@ export default function App() {
       refreshSessions();
     };
 
-    let res: Response;
-    try {
-      res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: msg,
-          history: priorMessages,
-          modelMessages: stored?.modelMessages,
-        }),
-      });
-    } catch (err) {
-      console.error(err);
-      failWithAssistantError(err instanceof Error ? err.message : "Network error");
-      return;
-    }
-
-    if (!res.ok) {
-      const errBody = (await res.json().catch(() => ({}))) as { error?: string };
-      failWithAssistantError(typeof errBody.error === "string" ? errBody.error : res.statusText);
-      return;
-    }
-
-    const reader = res.body?.getReader();
-    if (!reader) {
-      failWithAssistantError("No response body");
-      return;
-    }
+    const snap = loadChatsV1().find((s) => s.id === activeSessionId);
+    const modelMessagesPayload = options.rebuildModelMessages ? null : (snap?.modelMessages ?? null);
 
     try {
-      await readSseBlocks(reader, (data) => {
-        if (data.type === "step") {
-          setStreamingStep(data.step as MessageStep);
-          if (Array.isArray(data.steps)) setStreamingSteps(data.steps as MessageStep[]);
-        } else if (data.type === "chat_done") {
-          setStreamingStep(null);
-          setStreamingSteps([]);
-          const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
-          setMessages(hist);
-          upsertStoredSession({
-            id: activeSessionId!,
-            history: hist,
-            modelMessages: data.modelMessages as Array<Record<string, unknown>> | undefined,
-            updatedAt: Date.now(),
-          });
-          refreshSessions();
-          if (debugOpenRef.current) fetchDebugData(activeSessionId!);
-        } else if (data.type === "error") {
-          setStreamingStep(null);
-          setStreamingSteps([]);
-          const errText = typeof data.error === "string" ? data.error : "Unknown error";
-          failWithAssistantError(errText);
-        }
-      });
-    } catch (err) {
-      console.error(err);
-      failWithAssistantError(err instanceof Error ? err.message : String(err));
+      let res: Response;
+      try {
+        res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: msg,
+            history: priorMessages,
+            modelMessages: modelMessagesPayload,
+          }),
+        });
+      } catch (err) {
+        console.error(err);
+        failWithAssistantError(err instanceof Error ? err.message : "Network error");
+        return;
+      }
+
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+        failWithAssistantError(typeof errBody.error === "string" ? errBody.error : res.statusText);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        failWithAssistantError("No response body");
+        return;
+      }
+
+      try {
+        await readSseBlocks(reader, (data) => {
+          if (data.type === "step") {
+            setStreamingStep(data.step as MessageStep);
+            if (Array.isArray(data.steps)) setStreamingSteps(data.steps as MessageStep[]);
+          } else if (data.type === "chat_done") {
+            setStreamingStep(null);
+            setStreamingSteps([]);
+            const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
+            setMessages(hist);
+            upsertStoredSession({
+              id: activeSessionId!,
+              history: hist,
+              modelMessages: data.modelMessages as Array<Record<string, unknown>> | undefined,
+              updatedAt: Date.now(),
+            });
+            refreshSessions();
+            if (debugOpenRef.current) fetchDebugData(activeSessionId!);
+          } else if (data.type === "error") {
+            setStreamingStep(null);
+            setStreamingSteps([]);
+            const errText = typeof data.error === "string" ? data.error : "Unknown error";
+            failWithAssistantError(errText);
+          }
+        });
+      } catch (err) {
+        console.error(err);
+        failWithAssistantError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setChatPending(false);
     }
+  };
+
+  const sendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!input.trim() || !activeSessionId) return;
+    const msg = input.trim();
+    setInput("");
+    await runChatTurn(messages, msg, { rebuildModelMessages: false });
+  };
+
+  const confirmTruncateAndRetry = async () => {
+    const p = truncateConfirm;
+    setTruncateConfirm(null);
+    setEditingUserIndex(null);
+    if (!p || !activeSessionId) return;
+    const row = messages[p.userIndex];
+    if (!row || row.role !== "user") return;
+    const text = p.kind === "edit" ? p.text : row.content;
+    if (!text.trim()) return;
+    await runChatTurn(messages.slice(0, p.userIndex), text, { rebuildModelMessages: true });
   };
 
   const toggleDebug = () => {
@@ -211,14 +255,22 @@ export default function App() {
     setDebugOpen(!debugOpen);
   };
 
-  const deleteSession = (id: string) => {
-    if (!confirm("Delete this chat? This cannot be undone.")) return;
+  const requestDeleteSession = (id: string) => {
+    setPendingDeleteSessionId(id);
+  };
+
+  const performDeleteSession = () => {
+    const id = pendingDeleteSessionId;
+    setPendingDeleteSessionId(null);
+    if (!id) return;
     removeStoredSession(id);
     if (activeSessionId === id) {
       setActiveSessionId(null);
       setMessages([]);
       setDebugOpen(false);
       setDebugData(null);
+      setEditingUserIndex(null);
+      setTruncateConfirm(null);
     }
     refreshSessions();
   };
@@ -264,7 +316,7 @@ export default function App() {
             }}
             onNewSession={createSession}
             onRenameSession={(id) => setRenameSessionId(id)}
-            onDeleteSession={deleteSession}
+            onDeleteSession={requestDeleteSession}
             isLoading={isLoading}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
@@ -317,10 +369,16 @@ export default function App() {
                   messages={messages}
                   streamingSteps={streamingSteps}
                   streamingStep={streamingStep}
+                  chatPending={chatPending}
                   input={input}
                   setInput={setInput}
                   onSendMessage={sendMessage}
                   onViewSteps={setStepsModalData}
+                  editingUserIndex={editingUserIndex}
+                  onStartEditUser={setEditingUserIndex}
+                  onCancelEditUser={() => setEditingUserIndex(null)}
+                  onRequestEditConfirm={(userIndex, text) => setTruncateConfirm({ kind: "edit", userIndex, text })}
+                  onRequestRetryConfirm={(userIndex) => setTruncateConfirm({ kind: "retry", userIndex })}
                 />
               </div>
             ) : (
@@ -377,6 +435,23 @@ export default function App() {
           initialTitle={renameTarget?.preview ?? ""}
           onSave={saveSessionTitle}
           onClose={() => setRenameSessionId(null)}
+        />
+      )}
+      {truncateConfirm && (
+        <TruncateConfirmModal
+          title="Delete later messages?"
+          description="All message history after this point will be permanently deleted. This cannot be undone."
+          onClose={() => setTruncateConfirm(null)}
+          onConfirm={confirmTruncateAndRetry}
+        />
+      )}
+      {pendingDeleteSessionId && (
+        <TruncateConfirmModal
+          title="Delete this chat?"
+          description="This chat and all of its messages will be permanently deleted. This cannot be undone."
+          confirmLabel="Delete"
+          onClose={() => setPendingDeleteSessionId(null)}
+          onConfirm={performDeleteSession}
         />
       )}
     </div>

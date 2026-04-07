@@ -35,5 +35,5 @@ export interface DebugData {
   history: Message[];
   customTitle?: string | null;
   /** Cumulative Ollama `messages` (excludes system); next turn prepends system and appends the new user message. */
-  modelMessages?: Array<Record<string, unknown>>;
+  modelMessages?: Array<Record<string, unknown>> | null;
 }

@@ -76,21 +76,34 @@ export function ChatArea({
   messages,
   streamingSteps,
   streamingStep,
+  chatPending,
   input,
   setInput,
   onSendMessage,
   onViewSteps,
+  editingUserIndex,
+  onStartEditUser,
+  onCancelEditUser,
+  onRequestEditConfirm,
+  onRequestRetryConfirm,
 }: {
   messages: Message[];
   streamingSteps: MessageStep[];
   streamingStep: MessageStep | null;
+  chatPending: boolean;
   input: string;
   setInput: (v: string) => void;
   onSendMessage: (e: React.FormEvent) => void;
   onViewSteps: (steps: MessageStep[] | "live") => void;
+  editingUserIndex: number | null;
+  onStartEditUser: (index: number) => void;
+  onCancelEditUser: () => void;
+  onRequestEditConfirm: (userIndex: number, text: string) => void;
+  onRequestRetryConfirm: (userIndex: number) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
+  const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -111,9 +124,16 @@ export function ChatArea({
             {messages.map((message, index) => (
               <MessageItem
                 key={index}
+                messageIndex={index}
                 message={message}
                 animDelayMs={Math.min(index, 10) * 32}
                 onViewSteps={message.steps && message.steps.length > 0 ? () => onViewSteps(message.steps!) : undefined}
+                isBusy={isBusy}
+                editingUserIndex={editingUserIndex}
+                onStartEditUser={onStartEditUser}
+                onCancelEditUser={onCancelEditUser}
+                onRequestEditConfirm={onRequestEditConfirm}
+                onRequestRetryConfirm={onRequestRetryConfirm}
               />
             ))}
 
@@ -161,13 +181,14 @@ export function ChatArea({
                   onSendMessage(e);
                 }
               }}
+              disabled={isBusy}
               placeholder="Send a message…"
-              className="min-h-10 max-h-[200px] w-full flex-1 bg-transparent py-2.5 text-[0.9375rem] leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground"
+              className="min-h-10 max-h-[200px] w-full flex-1 bg-transparent py-2.5 text-[0.9375rem] leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               rows={1}
             />
             <button
               type="submit"
-              disabled={!input.trim()}
+              disabled={!input.trim() || isBusy}
               className={cx(primaryButton, "size-9 shrink-0 justify-center rounded-lg p-0")}
               aria-label="Send message"
             >

@@ -8,7 +8,7 @@ export type StoredChatSession = {
   updatedAt: number;
   customTitle?: string | null;
   history: Message[];
-  modelMessages?: Array<Record<string, unknown>>;
+  modelMessages?: Array<Record<string, unknown>> | null;
 };
 
 export function loadChatsV1(): StoredChatSession[] {

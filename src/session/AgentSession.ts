@@ -19,14 +19,14 @@ export class AgentSession extends EventEmitter {
   /** Rehydrate from client persistence (localStorage) after a server restart. */
   restoreFromPersistence(payload: {
     history: { role: string; content: string; steps?: HistoryWireStep[] }[];
-    modelMessages?: Array<Record<string, unknown>>;
+    modelMessages?: Array<Record<string, unknown>> | null;
   }) {
     this.history = payload.history.map((h) => ({
       role: h.role,
       content: h.content,
       ...(h.steps != null ? { steps: h.steps } : {}),
     }));
-    if (payload.modelMessages != null) {
+    if (Array.isArray(payload.modelMessages)) {
       type AgentHist = { role: string; content: string; tool_calls?: unknown };
       this.generalAgent.history = payload.modelMessages.map((m) => {
         const row: AgentHist = {
@@ -37,7 +37,10 @@ export class AgentSession extends EventEmitter {
         return row as { role: string; content: string };
       });
     } else {
-      this.generalAgent.history = [];
+      this.generalAgent.history = payload.history.map((h) => ({
+        role: typeof h.role === "string" ? h.role : "user",
+        content: typeof h.content === "string" ? h.content : "",
+      }));
     }
   }
 
