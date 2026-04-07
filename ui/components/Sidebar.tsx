@@ -86,13 +86,19 @@ export function Sidebar({
                   type="button"
                   onClick={() => onSelectSession(session.id)}
                   className={cx(
-                    "flex w-full justify-center rounded-md px-2 py-2 text-left transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.98]",
-                    active ? "bg-accent-soft hover:bg-accent-soft-strong" : "",
+                    "relative flex w-full justify-center rounded-md px-2 py-2 text-left transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.98]",
+                    active &&
+                      "before:pointer-events-none before:absolute before:left-1 before:top-1/2 before:h-5 before:w-px before:-translate-y-1/2 before:rounded-full before:bg-foreground/45 before:content-['']",
                   )}
                   title={session.preview || "Chat"}
                 >
                   <div className="min-w-0">
-                    <div className={cx("size-1.5 rounded-full bg-muted-foreground", active && "bg-accent")} />
+                    <div
+                      className={cx(
+                        "size-1.5 rounded-full bg-muted-foreground/55 transition-[background-color,opacity] duration-150",
+                        active && "bg-foreground/50",
+                      )}
+                    />
                   </div>
                 </button>
               );
@@ -106,8 +112,8 @@ export function Sidebar({
                     onSelectSession(session.id);
                   }}
                   className={cx(
-                    "block w-full rounded-none rounded-l-md bg-transparent px-2 py-2.5 pr-1 text-left transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.995]",
-                    active ? "bg-accent-soft hover:bg-accent-soft-strong" : "",
+                    "relative block w-full rounded-none rounded-l-md border-l-2 border-transparent bg-transparent px-2 py-2.5 pr-1 text-left transition-[color,background-color,border-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.995]",
+                    active && "border-l-foreground/35 bg-muted/20 hover:bg-muted/35",
                   )}
                 >
                   <div className="min-w-0">

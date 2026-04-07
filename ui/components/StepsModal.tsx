@@ -2,8 +2,13 @@ import { Bot, Search, Wrench, X } from "lucide-react";
 import type { MessageStep, SubagentRun } from "../types";
 import { cx, debugBlock, eyebrowText, modalCloseButton, modalHeader, modalShell, modalSurface } from "../styles";
 
+/** `complete` steps mirror the final reply and add noise in the trace viewer. */
+export function traceStepsForDisplay(steps: MessageStep[]): MessageStep[] {
+  return steps.filter((s) => s.kind !== "complete");
+}
+
 function TraceSubagentPanel({ run }: { run: SubagentRun }) {
-  const steps = run.steps ?? [];
+  const steps = traceStepsForDisplay(run.steps ?? []);
   if (steps.length === 0) return null;
 
   return (
@@ -75,7 +80,12 @@ function TraceStepBody({ step, showIndex, stepNumber }: { step: MessageStep; sho
       </div>
 
       {step.thinking ? (
-        <div className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-[1.6] text-foreground">{step.thinking}</div>
+        <div className="mt-2">
+          <div className={eyebrowText}>Thinking</div>
+          <pre className={cx(debugBlock, "mt-1.5 max-h-[min(40vh,20rem)] overflow-auto text-[0.8125rem] leading-[1.6] text-muted-foreground")}>
+            {step.thinking}
+          </pre>
+        </div>
       ) : null}
 
       {step.args && (
@@ -107,7 +117,8 @@ function TraceStepBody({ step, showIndex, stepNumber }: { step: MessageStep; sho
 }
 
 export function StepsModal({ steps, onClose }: { steps: MessageStep[]; onClose: () => void }) {
-  if (!steps || steps.length === 0) return null;
+  const displaySteps = traceStepsForDisplay(steps ?? []);
+  if (displaySteps.length === 0) return null;
 
   return (
     <div className={modalShell} role="dialog" aria-modal="true" onClick={onClose}>
@@ -127,7 +138,7 @@ export function StepsModal({ steps, onClose }: { steps: MessageStep[]; onClose: 
           </div>
 
           <div className="flex min-h-0 flex-col overflow-y-auto px-[18px] pb-5 pt-4 sm:px-3.5 sm:pb-3.5 sm:pt-3.5">
-            {steps.map((step, index) => (
+            {displaySteps.map((step, index) => (
               <TraceStepBody key={index} step={step} showIndex stepNumber={index + 1} />
             ))}
           </div>

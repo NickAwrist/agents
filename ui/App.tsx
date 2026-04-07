@@ -2,7 +2,7 @@ import { type CSSProperties } from "react";
 import { TruncateConfirmModal } from "./components/TruncateConfirmModal";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
-import { StepsModal } from "./components/StepsModal";
+import { StepsModal, traceStepsForDisplay } from "./components/StepsModal";
 import { DebugModal } from "./components/DebugModal";
 import { RenameSessionModal } from "./components/RenameSessionModal";
 import { OllamaDisconnectedBanner } from "./components/OllamaDisconnectedBanner";
@@ -11,9 +11,31 @@ import { ChatAppHeader } from "./components/ChatAppHeader";
 import { WelcomeHome } from "./components/WelcomeHome";
 import { cx } from "./styles";
 import { useChatApp } from "./hooks/useChatApp";
+import { useAppKeybinds } from "./hooks/useAppKeybinds";
 
 export default function App() {
   const app = useChatApp();
+
+  const stepsModalOpen =
+    app.stepsModalData != null &&
+    (app.stepsModalData === "live" || traceStepsForDisplay(app.stepsModalData).length > 0);
+
+  useAppKeybinds({
+    blockShortcuts:
+      Boolean(app.renameSessionId) ||
+      app.truncateConfirm != null ||
+      Boolean(app.pendingDeleteSessionId) ||
+      app.debugOpen ||
+      stepsModalOpen,
+    sessions: app.sessions,
+    activeSessionId: app.activeSessionId,
+    switchToSession: app.switchToSession,
+    createSession: app.createSession,
+    setSidebarOpen: app.setSidebarOpen,
+    setSidebarCollapsed: app.setSidebarCollapsed,
+    goToHome: app.goToHome,
+    headerChatBusy: app.headerChatBusy,
+  });
 
   return (
     <>
@@ -109,9 +131,10 @@ export default function App() {
             onClose={() => app.setDebugOpen(false)}
           />
         )}
-        {app.modalSteps && app.modalSteps.length > 0 && (
-          <StepsModal steps={app.modalSteps} onClose={() => app.setStepsModalData(null)} />
-        )}
+        {app.stepsModalData != null &&
+          (app.stepsModalData === "live" || traceStepsForDisplay(app.stepsModalData).length > 0) && (
+            <StepsModal steps={app.modalSteps ?? []} onClose={() => app.setStepsModalData(null)} />
+          )}
         {app.renameSessionId && (
           <RenameSessionModal
             initialTitle={app.renameTarget?.preview ?? ""}

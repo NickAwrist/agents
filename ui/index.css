@@ -142,3 +142,17 @@
 .ui-animate-modal-panel {
   animation: ui-modal-panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+@keyframes ui-live-dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  55% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+}
+
+.ui-live-status-dot {
+  animation: ui-live-dot-pulse 2.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}

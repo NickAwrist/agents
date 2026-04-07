@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Check, Copy, Pencil, RotateCcw, Send, Waypoints, X } from "lucide-react";
 import type { Message } from "../types";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { traceStepsForDisplay } from "./StepsModal";
 import { cx } from "../styles";
 
 const msgIconBtn =
@@ -210,7 +211,7 @@ export function MessageItem({
               <Copy size={msgIconSize} strokeWidth={msgIconStroke} />
             )}
           </button>
-          {message.steps && message.steps.length > 0 && onViewSteps && (
+          {message.steps && traceStepsForDisplay(message.steps).length > 0 && onViewSteps && (
             <button
               type="button"
               onClick={onViewSteps}

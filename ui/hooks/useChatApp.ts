@@ -374,6 +374,23 @@ export function useChatApp() {
     dropSessionFromApp(id);
   }, [dropSessionFromApp, pendingDeleteSessionId]);
 
+  const goToHome = useCallback(() => {
+    if (activeSessionId && isStoredSessionEmpty(activeSessionId)) {
+      removeStoredSession(activeSessionId);
+      refreshSessions();
+    }
+    setActiveSessionId(null);
+    setMessages([]);
+    setStreamingStep(null);
+    setStreamingSteps([]);
+    setEditingUserIndex(null);
+    setTruncateConfirm(null);
+    setStepsModalData(null);
+    setDebugOpen(false);
+    setDebugData(null);
+    setSidebarOpen(false);
+  }, [activeSessionId, refreshSessions]);
+
   const saveSessionTitle = useCallback(
     (title: string) => {
       if (!renameSessionId) return;
@@ -430,6 +447,7 @@ export function useChatApp() {
     handleModelChange,
     switchToSession,
     createSession,
+    goToHome,
     sendMessage,
     confirmTruncateAndRetry,
     toggleDebug,

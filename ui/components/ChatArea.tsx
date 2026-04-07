@@ -2,7 +2,8 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUp, Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
-import { cx, primaryButton, secondaryButtonSmall } from "../styles";
+import { traceStepsForDisplay } from "./StepsModal";
+import { cx, primaryButton } from "../styles";
 
 function startCase(value: string) {
   return value
@@ -168,7 +169,7 @@ export function ChatArea({
       <div
         ref={scrollRef}
         className="absolute inset-0 z-0 overflow-x-hidden overflow-y-auto px-5 pt-[calc(3.5rem+1.25rem)] max-[640px]:px-3.5 max-[640px]:pt-[calc(52px+1rem)]"
-        style={{ paddingBottom: footerInset }}
+        style={{ paddingBottom: footerInset + 12 }}
       >
         <div className="mx-auto flex min-h-min w-full max-w-3xl flex-col">
             {messages.length === 0 && (
@@ -184,7 +185,11 @@ export function ChatArea({
                 messageIndex={index}
                 message={message}
                 animDelayMs={Math.min(index, 10) * 32}
-                onViewSteps={message.steps && message.steps.length > 0 ? () => onViewSteps(message.steps!) : undefined}
+                onViewSteps={
+                  message.steps && traceStepsForDisplay(message.steps).length > 0
+                    ? () => onViewSteps(message.steps!)
+                    : undefined
+                }
                 isBusy={isBusy}
                 editingUserIndex={editingUserIndex}
                 onStartEditUser={onStartEditUser}
@@ -195,24 +200,32 @@ export function ChatArea({
             ))}
 
             {(streamingStep || streamingSteps.length > 0) && (
-              <div className="ui-animate-slide-up mt-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border-subtle bg-transparent py-[10px] pb-3 text-[0.8125rem] text-muted-foreground">
-                <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                  <div className="size-1.5 shrink-0 rounded-full bg-accent animate-pulse" aria-hidden />
-                  <span className="font-medium">{liveMeta.label}</span>
-                  {liveMeta.detail && (
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-transparent px-2 py-[3px] text-[0.6875rem] font-medium text-foreground">
-                      {liveMeta.detail}
-                    </span>
-                  )}
-                </div>
-                {streamingSteps.length > 0 && (
+              <div className="ui-animate-slide-up mt-0 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border-subtle bg-transparent py-[10px] pb-3 text-[0.8125rem] text-muted-foreground">
+                {streamingSteps.length > 0 ? (
                   <button
                     type="button"
-                    className={cx(secondaryButtonSmall, "px-1.5 py-1 text-[0.6875rem] text-muted-foreground/80 hover:text-muted-foreground")}
+                    className="flex min-w-0 max-w-full flex-wrap items-center gap-2.5 rounded-md border border-transparent px-1 py-0.5 text-left text-inherit transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
                     onClick={() => onViewSteps("live")}
+                    aria-label="View execution trace"
                   >
-                    Trace
+                    <div className="ui-live-status-dot size-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+                    <span className="font-medium text-foreground">{liveMeta.label}</span>
+                    {liveMeta.detail && (
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-transparent px-2 py-[3px] text-[0.6875rem] font-medium text-foreground">
+                        {liveMeta.detail}
+                      </span>
+                    )}
                   </button>
+                ) : (
+                  <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                    <div className="ui-live-status-dot size-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+                    <span className="font-medium">{liveMeta.label}</span>
+                    {liveMeta.detail && (
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-transparent px-2 py-[3px] text-[0.6875rem] font-medium text-foreground">
+                        {liveMeta.detail}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             )}
