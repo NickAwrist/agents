@@ -131,6 +131,7 @@ export default function App() {
                 input={app.input}
                 setInput={app.setInput}
                 onSendMessage={app.sendMessage}
+                onStopGeneration={app.stopGeneration}
                 chatPending={app.chatPending}
                 streamingStep={app.streamingStep}
                 streamingSteps={app.streamingSteps}

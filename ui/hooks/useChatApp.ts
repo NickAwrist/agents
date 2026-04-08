@@ -38,6 +38,8 @@ export function useChatApp() {
   const [ollamaConnected, setOllamaConnected] = useState<boolean | null>(null);
   const debugOpenRef = useRef(false);
   debugOpenRef.current = debugOpen;
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
 
   const fetchOllamaHealth = useCallback(async () => {
     try {
@@ -246,6 +248,9 @@ export function useChatApp() {
       const snap = loadChatsV1().find((s) => s.id === activeSessionId);
       const modelMessagesPayload = options.rebuildModelMessages ? null : (snap?.modelMessages ?? null);
 
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       try {
         let res: Response;
         try {
@@ -258,8 +263,10 @@ export function useChatApp() {
               model: selectedModel,
               modelMessages: modelMessagesPayload,
             }),
+            signal: controller.signal,
           });
         } catch (err) {
+          if (controller.signal.aborted) return;
           console.error(err);
           failWithAssistantError(err instanceof Error ? err.message : "Network error");
           return;
@@ -279,7 +286,11 @@ export function useChatApp() {
 
         try {
           await readSseBlocks(reader, (data) => {
-            if (data.type === "stream_delta") {
+            if (data.type === "chat_started") {
+              if (typeof data.requestId === "string") {
+                activeRequestIdRef.current = data.requestId;
+              }
+            } else if (data.type === "stream_delta") {
               const cd = typeof data.contentDelta === "string" ? data.contentDelta : "";
               const td = typeof data.thinkingDelta === "string" ? data.thinkingDelta : "";
               const agent = typeof data.agentName === "string" ? data.agentName : "";
@@ -310,6 +321,20 @@ export function useChatApp() {
               });
               refreshSessions();
               if (debugOpenRef.current) void fetchDebugData(activeSessionId!);
+            } else if (data.type === "chat_aborted") {
+              setStreamingStep(null);
+              setStreamingSteps([]);
+              setStreamingContent("");
+              setStreamingThinking("");
+              const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
+              setMessages(hist);
+              upsertStoredSession({
+                id: activeSessionId!,
+                history: hist,
+                modelMessages: data.modelMessages as Array<Record<string, unknown>> | undefined,
+                updatedAt: Date.now(),
+              });
+              refreshSessions();
             } else if (data.type === "error") {
               setStreamingStep(null);
               setStreamingSteps([]);
@@ -320,15 +345,50 @@ export function useChatApp() {
             }
           });
         } catch (err) {
+          if (controller.signal.aborted) return;
           console.error(err);
           failWithAssistantError(err instanceof Error ? err.message : String(err));
         }
       } finally {
+        abortControllerRef.current = null;
+        activeRequestIdRef.current = null;
         setChatPending(false);
       }
     },
     [activeSessionId, fetchDebugData, ollamaReady, refreshSessions, selectedModel],
   );
+
+  const stopGeneration = useCallback(() => {
+    const requestId = activeRequestIdRef.current;
+    const controller = abortControllerRef.current;
+    if (!controller) return;
+
+    if (requestId) {
+      fetch("/api/chat/abort", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId }),
+      }).catch(() => {});
+    }
+
+    controller.abort();
+    abortControllerRef.current = null;
+    activeRequestIdRef.current = null;
+
+    setStreamingStep(null);
+    setStreamingSteps([]);
+    setStreamingContent("");
+    setStreamingThinking("");
+    setChatPending(false);
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant" as const, content: "*Response halted by user.*" },
+    ]);
+    if (activeSessionId) {
+      upsertStoredSession({ id: activeSessionId, updatedAt: Date.now() });
+    }
+  }, [activeSessionId]);
 
   const sendMessage = useCallback(
     async (e?: FormEvent) => {
@@ -475,6 +535,7 @@ export function useChatApp() {
     createSession,
     goToHome,
     sendMessage,
+    stopGeneration,
     confirmTruncateAndRetry,
     toggleDebug,
     requestDeleteSession,

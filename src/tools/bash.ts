@@ -2,9 +2,7 @@ import { BaseTool } from "./BaseTool";
 import type { Tool } from "ollama";
 import type { RunContext } from "../RunContext";
 import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { loadGitignore, filterOutputLines } from "../utils/gitignoreFilter";
 
 export class BashTool extends BaseTool {
   constructor() {
@@ -37,17 +35,47 @@ export class BashTool extends BaseTool {
       return "Error: No command provided.";
     }
 
+    const signal = ctx?.signal;
+    if (signal?.aborted) return "[command aborted]";
+
     try {
-      const { stdout, stderr } = await execAsync(command);
+      const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        const child = exec(command, (error, stdout, stderr) => {
+          if (error) {
+            reject(Object.assign(error, { stdout, stderr }));
+          } else {
+            resolve({ stdout: stdout ?? "", stderr: stderr ?? "" });
+          }
+        });
+
+        if (signal) {
+          const onAbort = () => {
+            child.kill("SIGTERM");
+            reject(new Error("Command aborted"));
+          };
+          if (signal.aborted) {
+            onAbort();
+          } else {
+            signal.addEventListener("abort", onAbort, { once: true });
+          }
+        }
+      });
+
       let output = "";
       if (stdout) {
-        output += stdout;
+        const ig = await loadGitignore();
+        const { filtered, removedCount } = filterOutputLines(stdout, ig);
+        output += filtered;
+        if (removedCount > 0) {
+          output += `\n[${removedCount} gitignored entries hidden]`;
+        }
       }
       if (stderr) {
         output += "\n--- stderr ---\n" + stderr;
       }
       return output || "Command executed successfully with no output.";
     } catch (error: any) {
+      if (signal?.aborted) return "[command aborted]";
       let output = error.stdout || error.stderr || error.message;
       return `Error executing command: ${output}`;
     }

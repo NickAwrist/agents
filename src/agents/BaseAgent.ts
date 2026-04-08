@@ -78,6 +78,7 @@ export class BaseAgent {
   }
 
   async run(prompt: string, ctx?: RunContext): Promise<string> {
+    const signal = ctx?.signal;
     const systemMsg: { role: string; content: string } | undefined = this.systemPrompt
       ? { role: "system", content: this.systemPrompt }
       : undefined;
@@ -88,6 +89,8 @@ export class BaseAgent {
     let turnIndex = 0;
 
     do {
+      if (signal?.aborted) break;
+
       ctx?.beginStep({ kind: "llm_call", turnIndex });
 
       const messages = [
@@ -115,20 +118,40 @@ export class BaseAgent {
         ...thinkOpt,
       });
 
-      for await (const chunk of stream) {
-        const cDelta = chunk.message.content ?? "";
-        const tDelta = chunk.message.thinking ?? "";
+      const onAbort = () => stream.abort();
+      if (signal?.aborted) {
+        stream.abort();
+      } else {
+        signal?.addEventListener("abort", onAbort, { once: true });
+      }
 
-        if (cDelta) fullContent += cDelta;
-        if (tDelta) fullThinking += tDelta;
+      try {
+        for await (const chunk of stream) {
+          if (signal?.aborted) break;
 
-        if (cDelta || tDelta) {
-          ctx?.streamDelta(cDelta, tDelta);
+          const cDelta = chunk.message.content ?? "";
+          const tDelta = chunk.message.thinking ?? "";
+
+          if (cDelta) fullContent += cDelta;
+          if (tDelta) fullThinking += tDelta;
+
+          if (cDelta || tDelta) {
+            ctx?.streamDelta(cDelta, tDelta);
+          }
+
+          if (chunk.message.tool_calls?.length) {
+            toolCalls = chunk.message.tool_calls;
+          }
         }
+      } catch (e) {
+        if (!signal?.aborted) throw e;
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
+      }
 
-        if (chunk.message.tool_calls?.length) {
-          toolCalls = chunk.message.tool_calls;
-        }
+      if (signal?.aborted) {
+        ctx?.endStep(fullContent || "[aborted]", fullThinking || undefined);
+        break;
       }
 
       if (fullContent && toolCalls.length) {
@@ -155,6 +178,8 @@ export class BaseAgent {
 
       if (toolCalls.length) {
         for (const toolCall of toolCalls) {
+          if (signal?.aborted) break;
+
           const toolName = toolCall.function.name;
           const args = this.parseToolArguments(toolCall.function.arguments);
 
@@ -164,13 +189,16 @@ export class BaseAgent {
 
           this.history.push({ role: "tool", content: result });
         }
+        if (signal?.aborted) break;
         prompt = "";
         turnIndex++;
       }
     } while (toolCalls.length);
 
-    ctx?.beginStep({ kind: "complete", turnIndex });
-    ctx?.endStep(fullContent, fullThinking || undefined);
+    if (!signal?.aborted) {
+      ctx?.beginStep({ kind: "complete", turnIndex });
+      ctx?.endStep(fullContent, fullThinking || undefined);
+    }
 
     return fullContent;
   }

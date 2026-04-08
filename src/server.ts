@@ -7,6 +7,8 @@ import { AgentSession } from "./session/AgentSession";
 
 const DEFAULT_CHAT_MODEL = "gemma4:31b";
 
+const activeRequests = new Map<string, AbortController>();
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
@@ -54,6 +56,17 @@ app.get("/api/models", async (_req, res) => {
   }
 });
 
+app.post("/api/chat/abort", (req, res) => {
+  const { requestId } = req.body as { requestId?: string };
+  if (!requestId || !activeRequests.has(requestId)) {
+    res.json({ aborted: false });
+    return;
+  }
+  activeRequests.get(requestId)!.abort();
+  activeRequests.delete(requestId);
+  res.json({ aborted: true });
+});
+
 app.post("/api/chat", async (req, res) => {
   const body = req.body as {
     message?: unknown;
@@ -83,43 +96,71 @@ app.post("/api/chat", async (req, res) => {
   const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
   const model = requestedModel || DEFAULT_CHAT_MODEL;
 
+  const requestId = crypto.randomUUID();
+  const abortController = new AbortController();
+  activeRequests.set(requestId, abortController);
+
+  let clientDisconnected = false;
+  res.on("close", () => {
+    if (!res.writableFinished) {
+      clientDisconnected = true;
+      abortController.abort();
+    }
+  });
+
   const session = new AgentSession(crypto.randomUUID(), { model });
   session.restoreFromPersistence({
     history: body.history as { role: string; content: string; steps?: HistoryWireStep[] }[],
     modelMessages: body.modelMessages,
   });
 
+  const safeSse = (payload: Record<string, unknown>) => {
+    if (!clientDisconnected) writeSse(res, payload);
+  };
+
+  safeSse({ type: "chat_started", requestId });
+
   const onStep = (payload: unknown) => {
-    writeSse(res, { type: "step", ...(payload as Record<string, unknown>) });
+    safeSse({ type: "step", ...(payload as Record<string, unknown>) });
   };
   const onStreamDelta = (payload: unknown) => {
-    writeSse(res, { type: "stream_delta", ...(payload as Record<string, unknown>) });
+    safeSse({ type: "stream_delta", ...(payload as Record<string, unknown>) });
+  };
+  const onAborted = (payload: unknown) => {
+    safeSse({ type: "chat_aborted", ...(payload as Record<string, unknown>) });
   };
   session.on("step", onStep);
   session.on("stream_delta", onStreamDelta);
+  session.on("aborted", onAborted);
 
   try {
-    const result = await session.sendChat(message);
-    const lastMsg = session.history[session.history.length - 1];
-    const stepsSnapshot = lastMsg?.steps || [];
-    writeSse(res, {
-      type: "chat_done",
-      result,
-      steps: stepsSnapshot,
-      history: session.history,
-      modelMessages: session.getModelMessagesForDebug(),
-      systemPrompt: session.getSystemPromptForDebug(),
-    });
+    const result = await session.sendChat(message, abortController.signal);
+    if (!abortController.signal.aborted) {
+      const lastMsg = session.history[session.history.length - 1];
+      const stepsSnapshot = lastMsg?.steps || [];
+      safeSse({
+        type: "chat_done",
+        result,
+        steps: stepsSnapshot,
+        history: session.history,
+        modelMessages: session.getModelMessagesForDebug(),
+        systemPrompt: session.getSystemPromptForDebug(),
+      });
+    }
   } catch (e) {
-    writeSse(res, {
-      type: "error",
-      error: e instanceof Error ? e.message : String(e),
-    });
+    if (!abortController.signal.aborted) {
+      safeSse({
+        type: "error",
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   } finally {
+    activeRequests.delete(requestId);
     clearInterval(pingInterval);
     session.off("step", onStep);
     session.off("stream_delta", onStreamDelta);
-    res.end();
+    session.off("aborted", onAborted);
+    if (!clientDisconnected) res.end();
   }
 });
 

@@ -23,6 +23,7 @@ export class RunContext {
   agentInstance: BaseAgent;
   readonly agentName: string;
   readonly prompt: string;
+  readonly signal?: AbortSignal;
   private _steps: Step[] = [];
   private _onChange?: OnStepChange;
   private _onStreamDelta?: OnStreamDelta;
@@ -32,12 +33,14 @@ export class RunContext {
     prompt: string,
     onChange?: OnStepChange,
     onStreamDelta?: OnStreamDelta,
+    signal?: AbortSignal,
   ) {
     this.agentInstance = agentInstance;
     this.agentName = agentInstance.name;
     this.prompt = prompt;
     this._onChange = onChange;
     this._onStreamDelta = onStreamDelta;
+    this.signal = signal;
   }
 
   /** Emit a streaming token delta for content and/or thinking. */
@@ -88,7 +91,7 @@ export class RunContext {
 
   /** Create a child RunContext for a nested agent, attached to the current step. */
   createChild(agentInstance: BaseAgent, prompt: string): RunContext {
-    const child = new RunContext(agentInstance, prompt, this._onChange, this._onStreamDelta);
+    const child = new RunContext(agentInstance, prompt, this._onChange, this._onStreamDelta, this.signal);
     const step = this._lastRunning();
     if (step) {
       step.childContext = child;

@@ -45,7 +45,7 @@ export class AgentSession extends EventEmitter {
     }
   }
 
-  public async sendChat(prompt: string): Promise<string> {
+  public async sendChat(prompt: string, signal?: AbortSignal): Promise<string> {
     this.history.push({ role: "user", content: prompt });
     
     const ctx = new RunContext(
@@ -60,18 +60,28 @@ export class AgentSession extends EventEmitter {
       (contentDelta, thinkingDelta, agentName) => {
         this.emit("stream_delta", { contentDelta, thinkingDelta, agentName });
       },
+      signal,
     );
 
     let result = "Error running agent.";
+    let aborted = false;
     try {
       const response = await this.generalAgent.run(prompt, ctx);
-      if (response !== null) {
+      if (signal?.aborted) {
+        aborted = true;
+        result = response || "";
+      } else if (response !== null) {
         result = response;
       }
     } catch (e) {
-      console.error(`[AgentSession ${this.sessionId}] error:`, e);
-      result = `Error: ${e instanceof Error ? e.message : String(e)}`;
-      ctx.failStep(result);
+      if (signal?.aborted) {
+        aborted = true;
+        result = "";
+      } else {
+        console.error(`[AgentSession ${this.sessionId}] error:`, e);
+        result = `Error: ${e instanceof Error ? e.message : String(e)}`;
+        ctx.failStep(result);
+      }
     }
 
     this.history.push({
@@ -79,6 +89,15 @@ export class AgentSession extends EventEmitter {
       content: result,
       steps: ctx.wireSteps(),
     });
+
+    if (aborted) {
+      this.emit("aborted", {
+        result,
+        steps: ctx.wireSteps(),
+        history: this.history,
+        modelMessages: this.getModelMessagesForDebug(),
+      });
+    }
 
     return result;
   }

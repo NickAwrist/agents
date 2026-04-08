@@ -1,12 +1,13 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
-import { ArrowUp } from "lucide-react";
-import { cx, primaryButton } from "../styles";
+import { ArrowUp, Square } from "lucide-react";
+import { cx, iconButton, primaryButton } from "../styles";
 import type { MessageStep } from "../types";
 
 export function ChatInputDock({
   input,
   setInput,
   onSendMessage,
+  onStopGeneration,
   chatPending,
   streamingStep,
   streamingSteps,
@@ -16,6 +17,7 @@ export function ChatInputDock({
   input: string;
   setInput: (v: string) => void;
   onSendMessage: (e: React.FormEvent) => void;
+  onStopGeneration: () => void;
   chatPending: boolean;
   streamingStep: MessageStep | null;
   streamingSteps: MessageStep[];
@@ -85,14 +87,28 @@ export function ChatInputDock({
           className="min-h-10 max-h-[30vh] w-full flex-1 resize-none overflow-y-auto bg-transparent py-2.5 text-[0.9375rem] leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
           rows={1}
         />
-        <button
-          type="submit"
-          disabled={!input.trim() || !canSend}
-          className={cx(primaryButton, "size-9 shrink-0 justify-center rounded-lg p-0")}
-          aria-label="Send message"
-        >
-          <ArrowUp size={18} />
-        </button>
+        {isBusy ? (
+          <button
+            type="button"
+            onClick={onStopGeneration}
+            className={cx(
+              iconButton,
+              "size-9 shrink-0 p-0 hover:border-red-500/20 hover:bg-red-500/[0.06] hover:text-red-300",
+            )}
+            aria-label="Stop generation"
+          >
+            <Square size={12} strokeWidth={2.25} className="shrink-0" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!input.trim() || !canSend}
+            className={cx(primaryButton, "size-9 shrink-0 justify-center rounded-lg p-0")}
+            aria-label="Send message"
+          >
+            <ArrowUp size={18} />
+          </button>
+        )}
       </form>
     </div>
   );

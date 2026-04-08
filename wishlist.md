@@ -1,13 +1,10 @@
 Priority
-- Chat and thinking streaming
 - Custom ollama backend uri
 - Idk if one exists but a fallback for if no models in ollama are found
-- Add some way to make .gitignore directories not output, node_modules, dist, etc. When the agent list files with ls -R, it clogs context with node modules and dist.
 
 Really want
 - Customizable and configurable aghents from the UI
 - MCPs
-- Stop generation flow
 - Ability to change workspace/root directory
 - Projects section that share a modified system prompt
 

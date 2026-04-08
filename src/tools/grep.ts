@@ -1,8 +1,9 @@
 import type { Tool } from "ollama";
+import type { Ignore } from "ignore";
 import { BaseTool } from "./BaseTool";
 import fs from 'fs/promises';
 import pathModule from 'path';
-import ignore from 'ignore';
+import { loadGitignore } from "../utils/gitignoreFilter";
 
 export class GrepTool extends BaseTool {
   constructor() {
@@ -37,18 +38,15 @@ export class GrepTool extends BaseTool {
 
     try {
       const regex = new RegExp(patternStr);
-      
-      // Load .gitignore from the search path if it's a directory
-      let ig: ignore.Ignore | undefined = undefined;
+
+      let ig: Ignore | undefined = undefined;
       try {
         const stats = await fs.stat(path);
         if (stats.isDirectory()) {
-          const gitignorePath = pathModule.join(path, '.gitignore');
-          const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
-          ig = ignore().add(gitignoreContent);
+          ig = await loadGitignore(path);
         }
-      } catch (e) {
-        // .gitignore might not exist or path might be a file
+      } catch {
+        // path might be a file, that's fine
       }
 
       const results = await this.searchRecursive(path, regex, ig);
@@ -75,7 +73,7 @@ export class GrepTool extends BaseTool {
     return results;
   }
 
-  private async searchRecursive(currentPath: string, regex: RegExp, ig?: ignore.Ignore): Promise<string[]> {
+  private async searchRecursive(currentPath: string, regex: RegExp, ig?: Ignore): Promise<string[]> {
     const results: string[] = [];
     try {
       const stats = await fs.stat(currentPath);
