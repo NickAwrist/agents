@@ -6,7 +6,6 @@ Priority
 
 Really want
 - Customizable and configurable aghents from the UI
-- Better UI for the trace steps, unify the in-progress trace and post-completion trace
 - MCPs
 - Stop generation flow
 - Ability to change workspace/root directory

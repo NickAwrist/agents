@@ -101,6 +101,7 @@ export default function App() {
                     messages={app.messages}
                     streamingSteps={app.streamingSteps}
                     streamingStep={app.streamingStep}
+                    streamingContent={app.streamingContent}
                     chatPending={app.chatPending}
                     footerInset={chatFooterInset}
                     onViewSteps={app.setStepsModalData}
@@ -148,7 +149,11 @@ export default function App() {
           />
         )}
         {stepsModalOpen && (
-          <StepsModal steps={app.modalSteps ?? []} onClose={() => app.setStepsModalData(null)} />
+          <StepsModal
+            steps={app.modalSteps ?? []}
+            streamingThinking={app.stepsModalData === "live" ? app.streamingThinking : undefined}
+            onClose={() => app.setStepsModalData(null)}
+          />
         )}
         {app.renameSessionId && (
           <RenameSessionModal

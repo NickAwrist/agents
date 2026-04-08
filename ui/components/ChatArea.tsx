@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useRef } from "react";
 import { Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
+import { MarkdownMessage } from "./MarkdownMessage";
 import { traceStepsForDisplay } from "./ExecutionTrace";
 
 function startCase(value: string) {
@@ -19,7 +20,9 @@ function formatAgentName(name?: string) {
   return startCase(name);
 }
 
-function getLiveStepMeta(step: MessageStep | null, count: number) {
+function getLiveStepMeta(step: MessageStep | null, count: number, streamingContent: string) {
+  const isResponding = streamingContent.trim().length > 0;
+
   if (!step) {
     return {
       label: "Running",
@@ -67,7 +70,7 @@ function getLiveStepMeta(step: MessageStep | null, count: number) {
   }
 
   return {
-    label: "Thinking",
+    label: isResponding ? "Responding" : "Thinking",
     detail: agentName && step.agentName !== "general_agent" ? agentName : null,
   };
 }
@@ -76,6 +79,7 @@ export function ChatArea({
   messages,
   streamingSteps,
   streamingStep,
+  streamingContent,
   chatPending,
   footerInset,
   onViewSteps,
@@ -88,6 +92,7 @@ export function ChatArea({
   messages: Message[];
   streamingSteps: MessageStep[];
   streamingStep: MessageStep | null;
+  streamingContent: string;
   chatPending: boolean;
   footerInset: number;
   onViewSteps: (steps: MessageStep[] | "live") => void;
@@ -98,7 +103,7 @@ export function ChatArea({
   onRequestRetryConfirm: (userIndex: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length);
+  const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length, streamingContent);
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
 
   const scrollMessagesToBottom = useCallback(() => {
@@ -120,7 +125,7 @@ export function ChatArea({
     return () => {
       cancelled = true;
     };
-  }, [messages, streamingStep, streamingSteps, scrollMessagesToBottom]);
+  }, [messages, streamingStep, streamingSteps, streamingContent, scrollMessagesToBottom]);
 
   return (
     <div className="relative h-full min-h-0 flex-1 overflow-x-hidden">
@@ -185,6 +190,17 @@ export function ChatArea({
                     )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {streamingContent && (
+              <div className="ui-animate-slide-up flex w-full min-w-0 flex-col">
+                <div className="flex w-full justify-start pt-4 max-[640px]:pt-3.5" aria-hidden>
+                  <div className="h-px w-9 max-[640px]:w-8 shrink-0 rounded-full bg-border-subtle/70" />
+                </div>
+                <div className="max-w-[min(100%,42rem)] min-w-0 pt-2">
+                  <MarkdownMessage className="text-foreground">{streamingContent}</MarkdownMessage>
+                </div>
               </div>
             )}
         </div>

@@ -92,7 +92,11 @@ app.post("/api/chat", async (req, res) => {
   const onStep = (payload: unknown) => {
     writeSse(res, { type: "step", ...(payload as Record<string, unknown>) });
   };
+  const onStreamDelta = (payload: unknown) => {
+    writeSse(res, { type: "stream_delta", ...(payload as Record<string, unknown>) });
+  };
   session.on("step", onStep);
+  session.on("stream_delta", onStreamDelta);
 
   try {
     const result = await session.sendChat(message);
@@ -114,6 +118,7 @@ app.post("/api/chat", async (req, res) => {
   } finally {
     clearInterval(pingInterval);
     session.off("step", onStep);
+    session.off("stream_delta", onStreamDelta);
     res.end();
   }
 });

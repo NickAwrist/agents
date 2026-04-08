@@ -5,7 +5,15 @@ import { modalCloseButton, modalHeader, modalShell, modalSurface, eyebrowText } 
 
 export { traceStepsForDisplay } from "./ExecutionTrace";
 
-export function StepsModal({ steps, onClose }: { steps: MessageStep[]; onClose: () => void }) {
+export function StepsModal({
+  steps,
+  streamingThinking,
+  onClose,
+}: {
+  steps: MessageStep[];
+  streamingThinking?: string;
+  onClose: () => void;
+}) {
   if (traceStepsForDisplay(steps ?? []).length === 0) return null;
 
   return (
@@ -26,7 +34,7 @@ export function StepsModal({ steps, onClose }: { steps: MessageStep[]; onClose: 
           </div>
 
           <div className="flex min-h-0 flex-col overflow-y-auto px-[18px] pb-5 pt-4 sm:px-3.5 sm:pb-3.5 sm:pt-3.5">
-            <ExecutionTraceList steps={steps} />
+            <ExecutionTraceList steps={steps} streamingThinking={streamingThinking} />
           </div>
         </div>
       </div>

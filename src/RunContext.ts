@@ -17,6 +17,7 @@ export type Step = {
 };
 
 export type OnStepChange = (ctx: RunContext, step: Step) => void;
+export type OnStreamDelta = (contentDelta: string, thinkingDelta: string, agentName: string) => void;
 
 export class RunContext {
   agentInstance: BaseAgent;
@@ -24,12 +25,24 @@ export class RunContext {
   readonly prompt: string;
   private _steps: Step[] = [];
   private _onChange?: OnStepChange;
+  private _onStreamDelta?: OnStreamDelta;
 
-  constructor(agentInstance: BaseAgent, prompt: string, onChange?: OnStepChange) {
+  constructor(
+    agentInstance: BaseAgent,
+    prompt: string,
+    onChange?: OnStepChange,
+    onStreamDelta?: OnStreamDelta,
+  ) {
     this.agentInstance = agentInstance;
     this.agentName = agentInstance.name;
     this.prompt = prompt;
     this._onChange = onChange;
+    this._onStreamDelta = onStreamDelta;
+  }
+
+  /** Emit a streaming token delta for content and/or thinking. */
+  streamDelta(contentDelta: string, thinkingDelta: string): void {
+    this._onStreamDelta?.(contentDelta, thinkingDelta, this.agentName);
   }
 
   /** Begin a new step. Fires onChange. */
@@ -75,7 +88,7 @@ export class RunContext {
 
   /** Create a child RunContext for a nested agent, attached to the current step. */
   createChild(agentInstance: BaseAgent, prompt: string): RunContext {
-    const child = new RunContext(agentInstance, prompt, this._onChange);
+    const child = new RunContext(agentInstance, prompt, this._onChange, this._onStreamDelta);
     const step = this._lastRunning();
     if (step) {
       step.childContext = child;

@@ -1,6 +1,6 @@
 import type { RunContext } from "../RunContext";
 import type { BaseTool } from "../tools/BaseTool";
-import ollama, { type ChatResponse, type Tool, type ToolCall } from "ollama";
+import ollama, { type ChatResponse, type ToolCall } from "ollama";
 import { Plan } from "../Plan";
 
 export class BaseAgent {
@@ -78,18 +78,18 @@ export class BaseAgent {
   }
 
   async run(prompt: string, ctx?: RunContext): Promise<string> {
-    // System prompt building
     const systemMsg: { role: string; content: string } | undefined = this.systemPrompt
       ? { role: "system", content: this.systemPrompt }
       : undefined;
 
-    let response: ChatResponse;
+    let fullContent = "";
+    let fullThinking = "";
+    let toolCalls: ToolCall[] = [];
     let turnIndex = 0;
 
     do {
       ctx?.beginStep({ kind: "llm_call", turnIndex });
 
-      // Create message history by appending history after system prompt, then user prompt
       const messages = [
         systemMsg || { role: "system", content: "" },
         ...this.history,
@@ -103,68 +103,75 @@ export class BaseAgent {
           ? ({ think: true as const } satisfies { think: true })
           : {};
 
-      response = await ollama.chat({
+      fullContent = "";
+      fullThinking = "";
+      toolCalls = [];
+
+      const stream = await ollama.chat({
         model: this.model,
         messages,
         tools: this.tools.map((tool) => tool.toTool()),
+        stream: true,
         ...thinkOpt,
       });
 
-      // Extract content, thinking, and tool calls from response
-      const content = response.message.content ?? "";
-      const thinking = response.message.thinking ?? "";
-      const toolCalls = response.message.tool_calls ?? [];
-      if (content && toolCalls.length) {
-        const toolStr = "→ " + toolCalls.map((c) => c.function.name).join(", ");
-        ctx?.endStep(content + "\n\n" + toolStr, thinking || undefined);
-      } else if (content) {
-        ctx?.endStep(content, thinking || undefined);
-      } else if (toolCalls.length) {
-        ctx?.endStep("→ " + toolCalls.map((c) => c.function.name).join(", "), thinking || undefined);
-      } else {
-        ctx?.endStep("", thinking || undefined);
+      for await (const chunk of stream) {
+        const cDelta = chunk.message.content ?? "";
+        const tDelta = chunk.message.thinking ?? "";
+
+        if (cDelta) fullContent += cDelta;
+        if (tDelta) fullThinking += tDelta;
+
+        if (cDelta || tDelta) {
+          ctx?.streamDelta(cDelta, tDelta);
+        }
+
+        if (chunk.message.tool_calls?.length) {
+          toolCalls = chunk.message.tool_calls;
+        }
       }
 
-      // Add user prompt to history
+      if (fullContent && toolCalls.length) {
+        const toolStr = "→ " + toolCalls.map((c) => c.function.name).join(", ");
+        ctx?.endStep(fullContent + "\n\n" + toolStr, fullThinking || undefined);
+      } else if (fullContent) {
+        ctx?.endStep(fullContent, fullThinking || undefined);
+      } else if (toolCalls.length) {
+        ctx?.endStep("→ " + toolCalls.map((c) => c.function.name).join(", "), fullThinking || undefined);
+      } else {
+        ctx?.endStep("", fullThinking || undefined);
+      }
+
       if (prompt) {
         this.history.push({ role: "user", content: prompt });
         prompt = "";
       }
 
-      // Add assistant message to history
-      const assistantMsg: any = { role: "assistant", content: response.message.content || "" };
-      if (response.message.tool_calls && response.message.tool_calls.length > 0) {
-        assistantMsg.tool_calls = response.message.tool_calls;
+      const assistantMsg: any = { role: "assistant", content: fullContent };
+      if (toolCalls.length > 0) {
+        assistantMsg.tool_calls = toolCalls;
       }
       this.history.push(assistantMsg);
 
-      // Execute tool calls
-      if (response.message.tool_calls?.length) {
-        for (const toolCall of response.message.tool_calls) {
-          // Extract tool name and arguments
+      if (toolCalls.length) {
+        for (const toolCall of toolCalls) {
           const toolName = toolCall.function.name;
           const args = this.parseToolArguments(toolCall.function.arguments);
 
-          // Begin tool call step
           ctx?.beginStep({ kind: "tool_call", turnIndex, toolName, args });
           const result = await this.executeToolCall(toolCall, ctx);
           ctx?.endStep(result);
 
-          // Add tool call to history
           this.history.push({ role: "tool", content: result });
         }
         prompt = "";
         turnIndex++;
       }
-    } while (response.message.tool_calls?.length);
-
-    // Extract final content and thinking
-    const finalText = response.message.content ?? "";
-    const finalThinking = response.message.thinking ?? "";
+    } while (toolCalls.length);
 
     ctx?.beginStep({ kind: "complete", turnIndex });
-    ctx?.endStep(finalText, finalThinking || undefined);
+    ctx?.endStep(fullContent, fullThinking || undefined);
 
-    return finalText;
+    return fullContent;
   }
 }

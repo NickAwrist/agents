@@ -48,12 +48,19 @@ export class AgentSession extends EventEmitter {
   public async sendChat(prompt: string): Promise<string> {
     this.history.push({ role: "user", content: prompt });
     
-    const ctx = new RunContext(this.generalAgent, prompt, (ctx, step) => {
-      this.emit("step", {
-        step: ctx.wireStep(step),
-        steps: ctx.wireSteps(),
-      });
-    });
+    const ctx = new RunContext(
+      this.generalAgent,
+      prompt,
+      (ctx, step) => {
+        this.emit("step", {
+          step: ctx.wireStep(step),
+          steps: ctx.wireSteps(),
+        });
+      },
+      (contentDelta, thinkingDelta, agentName) => {
+        this.emit("stream_delta", { contentDelta, thinkingDelta, agentName });
+      },
+    );
 
     let result = "Error running agent.";
     try {

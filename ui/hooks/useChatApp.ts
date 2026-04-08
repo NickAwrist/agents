@@ -16,6 +16,8 @@ export function useChatApp() {
   const [input, setInput] = useState("");
   const [streamingStep, setStreamingStep] = useState<MessageStep | null>(null);
   const [streamingSteps, setStreamingSteps] = useState<MessageStep[]>([]);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState("");
   const [debugOpen, setDebugOpen] = useState(false);
   const [debugData, setDebugData] = useState<DebugData | null>(null);
   const [stepsModalData, setStepsModalData] = useState<MessageStep[] | "live" | null>(null);
@@ -218,6 +220,8 @@ export function useChatApp() {
       setChatPending(true);
       setStreamingStep(null);
       setStreamingSteps([]);
+      setStreamingContent("");
+      setStreamingThinking("");
 
       const nextHistory: Message[] = [...priorMessages, { role: "user" as const, content: msg }];
       setMessages(nextHistory);
@@ -275,12 +279,27 @@ export function useChatApp() {
 
         try {
           await readSseBlocks(reader, (data) => {
-            if (data.type === "step") {
-              setStreamingStep(data.step as MessageStep);
+            if (data.type === "stream_delta") {
+              const cd = typeof data.contentDelta === "string" ? data.contentDelta : "";
+              const td = typeof data.thinkingDelta === "string" ? data.thinkingDelta : "";
+              const agent = typeof data.agentName === "string" ? data.agentName : "";
+              if (cd && agent === "general_agent") setStreamingContent((prev) => prev + cd);
+              if (td) setStreamingThinking((prev) => prev + td);
+            } else if (data.type === "step") {
+              const step = data.step as MessageStep;
+              if (step.status === "running") {
+                setStreamingThinking("");
+                if (step.kind !== "complete") {
+                  setStreamingContent("");
+                }
+              }
+              setStreamingStep(step);
               if (Array.isArray(data.steps)) setStreamingSteps(data.steps as MessageStep[]);
             } else if (data.type === "chat_done") {
               setStreamingStep(null);
               setStreamingSteps([]);
+              setStreamingContent("");
+              setStreamingThinking("");
               const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
               setMessages(hist);
               upsertStoredSession({
@@ -294,6 +313,8 @@ export function useChatApp() {
             } else if (data.type === "error") {
               setStreamingStep(null);
               setStreamingSteps([]);
+              setStreamingContent("");
+              setStreamingThinking("");
               const errText = typeof data.error === "string" ? data.error : "Unknown error";
               failWithAssistantError(errText);
             }
@@ -384,6 +405,8 @@ export function useChatApp() {
     setMessages([]);
     setStreamingStep(null);
     setStreamingSteps([]);
+    setStreamingContent("");
+    setStreamingThinking("");
     setEditingUserIndex(null);
     setTruncateConfirm(null);
     setStepsModalData(null);
@@ -420,6 +443,8 @@ export function useChatApp() {
     setInput,
     streamingStep,
     streamingSteps,
+    streamingContent,
+    streamingThinking,
     debugOpen,
     setDebugOpen,
     debugData,

@@ -102,11 +102,15 @@ function TraceStepBody({
   step,
   showIndex,
   stepNumber,
+  streamingThinking,
 }: {
   step: MessageStep;
   showIndex: boolean;
   stepNumber?: number;
+  streamingThinking?: string;
 }) {
+  const thinkingText = step.thinking || (step.status === "running" ? streamingThinking : "") || "";
+
   return (
     <div className={cx(showIndex && "border-b border-border-subtle py-[14px] last:border-b-0")}>
       <div className="flex flex-wrap items-center gap-2">
@@ -132,11 +136,11 @@ function TraceStepBody({
         ) : null}
       </div>
 
-      {step.thinking ? (
+      {thinkingText ? (
         <div className="mt-2">
           <div className={eyebrowText}>Thinking</div>
           <pre className={cx(debugBlock, "mt-1.5 max-h-[min(40vh,20rem)] overflow-auto text-[0.8125rem] leading-[1.6] text-muted-foreground")}>
-            {step.thinking}
+            {thinkingText}
           </pre>
         </div>
       ) : null}
@@ -170,12 +174,25 @@ function TraceStepBody({
 }
 
 /** Numbered root-level trace (same layout for live SSE and persisted message steps). */
-export function ExecutionTraceList({ steps }: { steps: MessageStep[] }) {
+export function ExecutionTraceList({
+  steps,
+  streamingThinking,
+}: {
+  steps: MessageStep[];
+  streamingThinking?: string;
+}) {
   const displaySteps = traceStepsForDisplay(steps ?? []);
+  const lastIdx = displaySteps.length - 1;
   return (
     <>
       {displaySteps.map((step, index) => (
-        <TraceStepBody key={index} step={step} showIndex stepNumber={index + 1} />
+        <TraceStepBody
+          key={index}
+          step={step}
+          showIndex
+          stepNumber={index + 1}
+          streamingThinking={index === lastIdx ? streamingThinking : undefined}
+        />
       ))}
     </>
   );
