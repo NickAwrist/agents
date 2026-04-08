@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Check, Copy, Pencil, RotateCcw, Send, Waypoints, X } from "lucide-react";
 import type { Message } from "../types";
 import { MarkdownMessage } from "./MarkdownMessage";
-import { traceStepsForDisplay } from "./StepsModal";
+import { traceStepsForDisplay } from "./ExecutionTrace";
 import { cx } from "../styles";
 
 const msgIconBtn =

@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useRef } from "react";
 import { Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
-import { traceStepsForDisplay } from "./StepsModal";
+import { traceStepsForDisplay } from "./ExecutionTrace";
 
 function startCase(value: string) {
   return value

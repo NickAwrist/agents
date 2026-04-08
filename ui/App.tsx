@@ -3,7 +3,8 @@ import { TruncateConfirmModal } from "./components/TruncateConfirmModal";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
 import { ChatInputDock } from "./components/ChatInputDock";
-import { StepsModal, traceStepsForDisplay } from "./components/StepsModal";
+import { StepsModal } from "./components/StepsModal";
+import { shouldShowStepsModal } from "./components/ExecutionTrace";
 import { DebugModal } from "./components/DebugModal";
 import { RenameSessionModal } from "./components/RenameSessionModal";
 import { OllamaDisconnectedBanner } from "./components/OllamaDisconnectedBanner";
@@ -18,9 +19,11 @@ export default function App() {
   const app = useChatApp();
   const [chatFooterInset, setChatFooterInset] = useState(104);
 
-  const stepsModalOpen =
-    app.stepsModalData != null &&
-    (app.stepsModalData === "live" || traceStepsForDisplay(app.stepsModalData).length > 0);
+  const stepsModalOpen = shouldShowStepsModal(
+    app.stepsModalData,
+    app.streamingSteps,
+    app.streamingStep,
+  );
 
   useAppKeybinds({
     blockShortcuts:
@@ -144,10 +147,9 @@ export default function App() {
             onClose={() => app.setDebugOpen(false)}
           />
         )}
-        {app.stepsModalData != null &&
-          (app.stepsModalData === "live" || traceStepsForDisplay(app.stepsModalData).length > 0) && (
-            <StepsModal steps={app.modalSteps ?? []} onClose={() => app.setStepsModalData(null)} />
-          )}
+        {stepsModalOpen && (
+          <StepsModal steps={app.modalSteps ?? []} onClose={() => app.setStepsModalData(null)} />
+        )}
         {app.renameSessionId && (
           <RenameSessionModal
             initialTitle={app.renameTarget?.preview ?? ""}

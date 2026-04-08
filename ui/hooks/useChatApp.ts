@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { SessionSummary, Message, MessageStep, DebugData, OllamaModelOption } from "../types";
+import { traceStepsForModal } from "../components/ExecutionTrace";
 import { loadChatsV1, removeStoredSession, upsertStoredSession } from "../persist/chats";
 import { loadPreferredModel, savePreferredModel } from "../persist/modelPreference";
 import { storedSessionToSummary } from "../persist/preview";
@@ -406,7 +407,7 @@ export function useChatApp() {
     [refreshSessions, renameSessionId],
   );
 
-  const modalSteps = stepsModalData === "live" ? streamingSteps : stepsModalData;
+  const modalSteps = traceStepsForModal(stepsModalData, streamingSteps, streamingStep);
   const renameTarget = renameSessionId ? sessions.find((s) => s.id === renameSessionId) : null;
   const headerChatBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
   const sidebarCols = sidebarCollapsed ? "72px minmax(0, 1fr)" : "260px minmax(0, 1fr)";
