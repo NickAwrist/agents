@@ -3,9 +3,9 @@ import { BaseTool } from "./BaseTool";
 import type { Tool } from "ollama";
 import type { RunContext } from "../RunContext";
 
-export class CodeDiscoveryAgentTool extends BaseTool {
-  constructor() {
-    super("code_discovery_agent", "CAn agent that helps find where a certain functionality is located in the codebase. If you do now know where a particular feature is, instead of listing all the files and reading each, just call this tool.");
+export class AgentTool extends BaseTool {
+  constructor(name: string, description: string) {
+    super(name, description);
   }
 
   override toTool(): Tool {
@@ -20,12 +20,12 @@ export class CodeDiscoveryAgentTool extends BaseTool {
             task: {
               type: "string",
               description:
-                "The description of the functionality or code you are looking for. Ensure this is a simple text prompt. If you have long code snippets, use task_lines instead.",
+                "The overall task to perform. Ensure this is a simple text prompt. If you have long code snippets, use task_lines instead.",
             },
             task_lines: {
               type: "array",
               items: { type: "string" },
-              description: "The description of the functionality or code you are looking for, split into an array of strings. Use this instead of 'task' if your prompt contains multiple lines or code.",
+              description: "The overall task to perform, split into an array of strings. Use this instead of 'task' if your prompt contains multiple lines or code.",
             },
           },
           required: [],
@@ -42,9 +42,8 @@ export class CodeDiscoveryAgentTool extends BaseTool {
         : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
-    const codeDiscoveryAgent = agentManager.createAgentForContext("code_discovery_agent", ctx);
-    // Providing a recognizable child context name
-    const childCtx = ctx?.createChild(codeDiscoveryAgent, task);
-    return codeDiscoveryAgent.run(task, childCtx);
+    const agent = agentManager.createAgentForContext(this.name, ctx);
+    const childCtx = ctx?.createChild(agent, task);
+    return agent.run(task, childCtx);
   }
 }

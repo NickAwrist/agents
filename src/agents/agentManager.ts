@@ -3,8 +3,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { BaseAgent } from './BaseAgent';
-import { CodeDiscoveryAgentTool } from "../tools/code_discovery_agent";
-import { ComputerAgentTool } from "../tools/computer_agent";
 import { CreateFileTool } from "../tools/create_file";
 import { DeleteFileTool } from "../tools/delete_file";
 import { GrepTool } from "../tools/grep";
@@ -12,11 +10,11 @@ import { ListFilesTool } from "../tools/list_files";
 import { ModifyPlan } from "../tools/modify_plan";
 import { ReadFileTool } from "../tools/read_file";
 import { RunTscTool } from "../tools/run_tsc";
-import { SoftwareEngAgentTool } from "../tools/software_eng_agent";
 import { WebSearchTool } from "../tools/web_search";
 import { BashTool } from "../tools/bash";
 import type { BaseTool } from '../tools/BaseTool';
 import type { RunContext } from '../RunContext';
+import { AgentTool } from '../tools/AgentTool';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,9 +51,12 @@ export const agentManager = {
   },
 
   getToolInstance(toolName: string): BaseTool {
-    switch (toolName) {
-      case 'code_discovery_agent': return new CodeDiscoveryAgentTool();
-      case 'computer_agent': return new ComputerAgentTool();
+
+    if (toolName.endsWith('_agent')) {
+      return new AgentTool(toolName, agentsData.agents.find((a: any) => a.name === toolName)?.description);
+    }
+
+    switch (toolName) { 
       case 'create_file': return new CreateFileTool();
       case 'delete_file': return new DeleteFileTool();
       case 'grep': return new GrepTool();
@@ -63,7 +64,6 @@ export const agentManager = {
       case 'modify_plan': return new ModifyPlan();
       case 'read_file': return new ReadFileTool();
       case 'run_tsc': return new RunTscTool();
-      case 'coding_agent': return new SoftwareEngAgentTool();
       case 'web_search': return new WebSearchTool();
       case 'bash': return new BashTool();
       default: throw new Error(`Unknown tool: ${toolName}`);
