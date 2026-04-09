@@ -11,13 +11,17 @@ import { OllamaDisconnectedBanner } from "./components/OllamaDisconnectedBanner"
 import { SidebarBackdrop } from "./components/SidebarBackdrop";
 import { ChatAppHeader } from "./components/ChatAppHeader";
 import { WelcomeHome } from "./components/WelcomeHome";
+import { AgentsPage } from "./components/AgentsPage";
 import { cx } from "./styles";
 import { useChatApp } from "./hooks/useChatApp";
 import { useAppKeybinds } from "./hooks/useAppKeybinds";
 
+type AppView = "chat" | "agents";
+
 export default function App() {
   const app = useChatApp();
   const [chatFooterInset, setChatFooterInset] = useState(104);
+  const [currentView, setCurrentView] = useState<AppView>("chat");
 
   const stepsModalOpen = shouldShowStepsModal(
     app.stepsModalData,
@@ -64,80 +68,96 @@ export default function App() {
               activeSessionId={app.activeSessionId}
               onSelectSession={(id) => {
                 app.setSidebarOpen(false);
+                setCurrentView("chat");
                 app.switchToSession(id);
               }}
-              onNewSession={app.createSession}
+              onNewSession={() => { setCurrentView("chat"); app.createSession(); }}
               onRenameSession={(id) => app.setRenameSessionId(id)}
               onDeleteSession={app.requestDeleteSession}
               isLoading={app.isLoading}
               collapsed={app.sidebarCollapsed}
               onToggleCollapsed={() => app.setSidebarCollapsed((value) => !value)}
+              onManageAgents={() => { app.setSidebarOpen(false); setCurrentView("agents"); }}
             />
           </aside>
 
           <SidebarBackdrop open={app.sidebarOpen} onClose={() => app.setSidebarOpen(false)} />
 
           <main className="relative min-h-0 min-w-0 bg-background">
-            <ChatAppHeader
-              activeSessionId={app.activeSessionId}
-              sidebarOpen={app.sidebarOpen}
-              onOpenSidebar={() => app.setSidebarOpen(true)}
-              ollamaModels={app.ollamaModels}
-              modelsLoadError={app.modelsLoadError}
-              selectedModel={app.selectedModel}
-              onModelChange={app.handleModelChange}
-              headerChatBusy={app.headerChatBusy}
-              debugOpen={app.debugOpen}
-              onToggleDebug={app.toggleDebug}
-            />
-
-            <section className={cx("flex h-full min-h-0 overflow-x-hidden", !app.activeSessionId && "pt-0")}>
-              {app.activeSessionId ? (
-                <div
-                  key={app.activeSessionId}
-                  className="ui-animate-fade-in flex h-full min-h-0 min-w-0 flex-1 flex-col"
-                >
-                  <ChatArea
-                    messages={app.messages}
-                    streamingSteps={app.streamingSteps}
-                    streamingStep={app.streamingStep}
-                    streamingContent={app.streamingContent}
-                    chatPending={app.chatPending}
-                    footerInset={chatFooterInset}
-                    onViewSteps={app.setStepsModalData}
-                    editingUserIndex={app.editingUserIndex}
-                    onStartEditUser={app.setEditingUserIndex}
-                    onCancelEditUser={() => app.setEditingUserIndex(null)}
-                    onRequestEditConfirm={(userIndex, text) =>
-                      app.setTruncateConfirm({ kind: "edit", userIndex, text })
-                    }
-                    onRequestRetryConfirm={(userIndex) => app.setTruncateConfirm({ kind: "retry", userIndex })}
-                  />
-                </div>
-              ) : (
-                <WelcomeHome
-                  key="home"
-                  sessions={app.sessions}
-                  isLoading={app.isLoading}
-                  onNewChat={app.createSession}
-                  onOpenSession={app.switchToSession}
-                />
-              )}
-            </section>
-
-            {app.activeSessionId && (
-              <ChatInputDock
-                key={app.activeSessionId}
-                input={app.input}
-                setInput={app.setInput}
-                onSendMessage={app.sendMessage}
-                onStopGeneration={app.stopGeneration}
-                chatPending={app.chatPending}
-                streamingStep={app.streamingStep}
-                streamingSteps={app.streamingSteps}
-                ollamaReady={app.ollamaReady}
-                onFooterHeightChange={setChatFooterInset}
+            {currentView === "agents" ? (
+              <AgentsPage
+                onBack={() => {
+                  void app.refreshAgentDefaults();
+                  setCurrentView("chat");
+                }}
               />
+            ) : (
+              <>
+                <ChatAppHeader
+                  activeSessionId={app.activeSessionId}
+                  sidebarOpen={app.sidebarOpen}
+                  onOpenSidebar={() => app.setSidebarOpen(true)}
+                  ollamaModels={app.ollamaModels}
+                  modelsLoadError={app.modelsLoadError}
+                  selectedModel={app.selectedModel}
+                  onModelChange={app.handleModelChange}
+                  chatAgents={app.chatAgents}
+                  selectedSessionAgent={app.selectedSessionAgent}
+                  onSessionAgentChange={app.handleSessionAgentChange}
+                  headerChatBusy={app.headerChatBusy}
+                  debugOpen={app.debugOpen}
+                  onToggleDebug={app.toggleDebug}
+                />
+
+                <section className={cx("flex h-full min-h-0 overflow-x-hidden", !app.activeSessionId && "pt-0")}>
+                  {app.activeSessionId ? (
+                    <div
+                      key={app.activeSessionId}
+                      className="ui-animate-fade-in flex h-full min-h-0 min-w-0 flex-1 flex-col"
+                    >
+                      <ChatArea
+                        messages={app.messages}
+                        streamingSteps={app.streamingSteps}
+                        streamingStep={app.streamingStep}
+                        streamingContent={app.streamingContent}
+                        chatPending={app.chatPending}
+                        footerInset={chatFooterInset}
+                        onViewSteps={app.setStepsModalData}
+                        editingUserIndex={app.editingUserIndex}
+                        onStartEditUser={app.setEditingUserIndex}
+                        onCancelEditUser={() => app.setEditingUserIndex(null)}
+                        onRequestEditConfirm={(userIndex, text) =>
+                          app.setTruncateConfirm({ kind: "edit", userIndex, text })
+                        }
+                        onRequestRetryConfirm={(userIndex) => app.setTruncateConfirm({ kind: "retry", userIndex })}
+                      />
+                    </div>
+                  ) : (
+                    <WelcomeHome
+                      key="home"
+                      sessions={app.sessions}
+                      isLoading={app.isLoading}
+                      onNewChat={app.createSession}
+                      onOpenSession={app.switchToSession}
+                    />
+                  )}
+                </section>
+
+                {app.activeSessionId && (
+                  <ChatInputDock
+                    key={app.activeSessionId}
+                    input={app.input}
+                    setInput={app.setInput}
+                    onSendMessage={app.sendMessage}
+                    onStopGeneration={app.stopGeneration}
+                    chatPending={app.chatPending}
+                    streamingStep={app.streamingStep}
+                    streamingSteps={app.streamingSteps}
+                    ollamaReady={app.ollamaReady}
+                    onFooterHeightChange={setChatFooterInset}
+                  />
+                )}
+              </>
             )}
           </main>
         </div>

@@ -36,7 +36,7 @@ function getLiveStepMeta(step: MessageStep | null, count: number, streamingConte
 
   if (isSubagentTool) {
     return {
-      label: "Subagent",
+      label: "Agent",
       detail: toolName,
     };
   }
@@ -50,7 +50,7 @@ function getLiveStepMeta(step: MessageStep | null, count: number, streamingConte
 
   if (step.kind === "llm_call" && agentName && step.agentName !== "general_agent") {
     return {
-      label: "Subagent",
+      label: "Agent",
       detail: agentName,
     };
   }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bot, ChevronLeft, ChevronRight, Loader2, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import type { SessionSummary } from "../types";
 import { cx, eyebrowText, iconButton } from "../styles";
 
@@ -13,6 +13,7 @@ export function Sidebar({
   isLoading,
   collapsed,
   onToggleCollapsed,
+  onManageAgents,
 }: {
   sessions: SessionSummary[];
   activeSessionId: string | null;
@@ -23,6 +24,7 @@ export function Sidebar({
   isLoading: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  onManageAgents: () => void;
 }) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const menuWrapRef = useRef<HTMLDivElement>(null);
@@ -39,7 +41,7 @@ export function Sidebar({
   }, [menuOpenId]);
 
   return (
-    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] px-2.5 pb-3 pt-3">
+    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] px-2.5 pb-3 pt-3">
       <div className="mb-2.5 flex items-center justify-between gap-2 px-1">
         <div className="min-w-0">
           {!collapsed && (
@@ -184,6 +186,17 @@ export function Sidebar({
             </div>
           )}
         </div>
+      </div>
+
+      <div className="border-t border-border-subtle pt-2">
+        <button
+          type="button"
+          onClick={onManageAgents}
+          className="flex w-full items-center justify-center gap-2 rounded-lg px-2.5 py-2 text-[0.8125rem] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+        >
+          <Bot size={15} />
+          {!collapsed && <span>Manage Agents</span>}
+        </button>
       </div>
     </div>
   );

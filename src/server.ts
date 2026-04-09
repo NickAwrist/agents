@@ -7,6 +7,7 @@ import { AgentSession } from "./session/AgentSession";
 import {
   createSessionRow,
   deleteSessionRow,
+  getAgentByName,
   getMessagesForSession,
   getSessionById,
   getDb,
@@ -14,8 +15,10 @@ import {
   parseModelMessages,
   patchSessionRow,
   replaceSessionMessages,
+  resolveSessionAgentName,
   type WireMessage,
 } from "./db/index";
+import agentRoutes from "./routes/agents";
 
 const DEFAULT_CHAT_MODEL = "gemma4:31b";
 
@@ -26,14 +29,26 @@ const activeRequests = new Map<string, AbortController>();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+app.use(agentRoutes);
 
 function writeSse(res: express.Response, payload: Record<string, unknown>) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-app.get("/api/agent/system-prompt", (_req, res) => {
-  const session = new AgentSession("meta");
-  res.json({ systemPrompt: session.getSystemPromptForDebug() });
+app.get("/api/agent/system-prompt", (req, res) => {
+  const q = typeof req.query.agentName === "string" ? req.query.agentName.trim() : "";
+  const sid = typeof req.query.sessionId === "string" ? req.query.sessionId.trim() : "";
+  let agentName = resolveSessionAgentName(sid ? getSessionById(sid) : null);
+  if (q && getAgentByName(q)) {
+    agentName = q;
+  }
+  try {
+    const session = new AgentSession("meta", { agentName });
+    res.json({ systemPrompt: session.getSystemPromptForDebug() });
+  } catch {
+    const session = new AgentSession("meta", { agentName: resolveSessionAgentName(null) });
+    res.json({ systemPrompt: session.getSystemPromptForDebug() });
+  }
 });
 
 app.get("/api/ollama/health", async (_req, res) => {
@@ -100,16 +115,21 @@ app.get("/api/sessions/:id", (req, res) => {
     history,
     modelMessages: parseModelMessages(row.model_messages),
     model: row.model,
+    agentName: resolveSessionAgentName(row),
   });
 });
 
 app.post("/api/sessions", (req, res) => {
-  const body = req.body as { model?: unknown };
+  const body = req.body as { model?: unknown; agentName?: unknown };
   const id = crypto.randomUUID();
   const now = Date.now();
   const model =
     typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
-  createSessionRow(id, now, model);
+  const rawAgent =
+    typeof body.agentName === "string" && body.agentName.trim() ? body.agentName.trim() : null;
+  const agentName =
+    rawAgent && getAgentByName(rawAgent) ? rawAgent : null;
+  createSessionRow(id, now, model, agentName);
   res.status(201).json({ id, createdAt: now, updatedAt: now });
 });
 
@@ -125,6 +145,7 @@ app.patch("/api/sessions/:id", (req, res) => {
     model?: unknown;
     modelMessages?: unknown;
     history?: unknown;
+    agentName?: unknown;
   };
   const now = Date.now();
 
@@ -165,6 +186,19 @@ app.patch("/api/sessions/:id", (req, res) => {
         : Array.isArray(mm)
           ? (mm as Array<Record<string, unknown>>)
           : null;
+  }
+  if ("agentName" in body && body.agentName !== undefined && !Array.isArray(body.history)) {
+    const a = body.agentName;
+    if (a === null) {
+      patch.agent_name = null;
+    } else if (typeof a === "string" && a.trim()) {
+      const t = a.trim();
+      if (!getAgentByName(t)) {
+        res.status(400).json({ error: "Unknown agent" });
+        return;
+      }
+      patch.agent_name = t;
+    }
   }
   patchSessionRow(id, patch);
   res.json({ ok: true });
@@ -242,7 +276,9 @@ app.post("/api/chat", async (req, res) => {
     }
   });
 
-  const session = new AgentSession(crypto.randomUUID(), { model });
+  const sessionRow = getSessionById(sessionId);
+  const chatAgentName = resolveSessionAgentName(sessionRow);
+  const session = new AgentSession(crypto.randomUUID(), { model, agentName: chatAgentName });
   session.restoreFromPersistence({
     history: body.history as { role: string; content: string; steps?: HistoryWireStep[] }[],
     modelMessages: body.modelMessages,

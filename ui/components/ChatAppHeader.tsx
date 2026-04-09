@@ -1,5 +1,6 @@
 import { Bug, PanelLeft, X } from "lucide-react";
 import { ModelSelectBar } from "./ModelSelectBar";
+import { AgentSelectBar } from "./AgentSelectBar";
 import { cx, iconButton } from "../styles";
 import type { OllamaModelOption } from "../types";
 
@@ -11,6 +12,9 @@ type ChatAppHeaderProps = {
   modelsLoadError: string | null;
   selectedModel: string;
   onModelChange: (model: string) => void;
+  chatAgents: { name: string }[];
+  selectedSessionAgent: string;
+  onSessionAgentChange: (name: string) => void;
   headerChatBusy: boolean;
   debugOpen: boolean;
   onToggleDebug: () => void;
@@ -24,6 +28,9 @@ export function ChatAppHeader({
   modelsLoadError,
   selectedModel,
   onModelChange,
+  chatAgents,
+  selectedSessionAgent,
+  onSessionAgentChange,
   headerChatBusy,
   debugOpen,
   onToggleDebug,
@@ -48,13 +55,21 @@ export function ChatAppHeader({
           <PanelLeft size={18} />
         </button>
         {activeSessionId && (
-          <ModelSelectBar
-            ollamaModels={ollamaModels}
-            modelsLoadError={modelsLoadError}
-            selectedModel={selectedModel}
-            onModelChange={onModelChange}
-            disabled={headerChatBusy}
-          />
+          <div className="flex min-w-0 items-center gap-1.5">
+            <ModelSelectBar
+              ollamaModels={ollamaModels}
+              modelsLoadError={modelsLoadError}
+              selectedModel={selectedModel}
+              onModelChange={onModelChange}
+              disabled={headerChatBusy}
+            />
+            <AgentSelectBar
+              agents={chatAgents}
+              selectedAgent={selectedSessionAgent}
+              onAgentChange={onSessionAgentChange}
+              disabled={headerChatBusy}
+            />
+          </div>
         )}
       </div>
       <div className="pointer-events-auto flex shrink-0 items-center">

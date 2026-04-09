@@ -9,6 +9,7 @@ export type StoredChatSession = {
   history: Message[];
   modelMessages?: Array<Record<string, unknown>> | null;
   model?: string | null;
+  agentName?: string;
 };
 
 async function readError(res: Response): Promise<string> {
@@ -56,18 +57,25 @@ export async function fetchSession(id: string): Promise<StoredChatSession | null
           ? (s.modelMessages as Array<Record<string, unknown>>)
           : null,
     model: s.model == null ? null : String(s.model),
+    agentName: typeof s.agentName === "string" ? s.agentName : undefined,
   };
 }
 
-export async function createSessionApi(model?: string | null): Promise<{
+export async function createSessionApi(opts?: {
+  model?: string | null;
+  agentName?: string | null;
+}): Promise<{
   id: string;
   createdAt: number;
   updatedAt: number;
 }> {
+  const body: Record<string, string> = {};
+  if (opts?.model?.trim()) body.model = opts.model.trim();
+  if (opts?.agentName?.trim()) body.agentName = opts.agentName.trim();
   const res = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(model?.trim() ? { model: model.trim() } : {}),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await readError(res));
   const j = (await res.json()) as Record<string, unknown>;

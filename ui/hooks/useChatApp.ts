@@ -8,6 +8,7 @@ import {
   fetchSessionSummaries,
   patchSessionApi,
 } from "../persist/sessions";
+import { fetchAgents, fetchDefaultChatAgent } from "../persist/agents";
 import { loadPreferredModel, savePreferredModel } from "../persist/modelPreference";
 import { readSseBlocks } from "../lib/readSseBlocks";
 
@@ -39,6 +40,9 @@ export function useChatApp() {
   const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
   const [serverDefaultModel, setServerDefaultModel] = useState("gemma4:31b");
   const [selectedModel, setSelectedModel] = useState(() => loadPreferredModel("gemma4:31b"));
+  const [chatAgents, setChatAgents] = useState<{ name: string }[]>([]);
+  const [selectedSessionAgent, setSelectedSessionAgent] = useState("general_agent");
+  const [serverDefaultChatAgent, setServerDefaultChatAgent] = useState("general_agent");
   const [ollamaConnected, setOllamaConnected] = useState<boolean | null>(null);
   const debugOpenRef = useRef(false);
   debugOpenRef.current = debugOpen;
@@ -48,6 +52,8 @@ export function useChatApp() {
   const loadGenRef = useRef(0);
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
+  const selectedSessionAgentRef = useRef(selectedSessionAgent);
+  selectedSessionAgentRef.current = selectedSessionAgent;
 
   const fetchOllamaHealth = useCallback(async () => {
     try {
@@ -111,6 +117,25 @@ export function useChatApp() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [list, def] = await Promise.all([fetchAgents(), fetchDefaultChatAgent()]);
+        if (cancelled) return;
+        setChatAgents(list.map((a) => ({ name: a.name })));
+        setServerDefaultChatAgent(def);
+      } catch {
+        if (!cancelled) {
+          setChatAgents([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const refreshSessions = useCallback(async () => {
     try {
       const list = await fetchSessionSummaries();
@@ -118,6 +143,16 @@ export function useChatApp() {
     } catch (e) {
       console.error(e);
       setSessions([]);
+    }
+  }, []);
+
+  const refreshAgentDefaults = useCallback(async () => {
+    try {
+      const [list, def] = await Promise.all([fetchAgents(), fetchDefaultChatAgent()]);
+      setChatAgents(list.map((a) => ({ name: a.name })));
+      setServerDefaultChatAgent(def);
+    } catch {
+      /* ignore */
     }
   }, []);
 
@@ -144,11 +179,28 @@ export function useChatApp() {
         next = names.has(serverDefaultModel) ? serverDefaultModel : (ollamaModels[0]?.name ?? next);
       }
       setSelectedModel(next);
+      const an = stored?.agentName?.trim();
+      setSelectedSessionAgent(an && an.length > 0 ? an : serverDefaultChatAgent);
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, ollamaModels, serverDefaultModel]);
+  }, [activeSessionId, ollamaModels, serverDefaultModel, serverDefaultChatAgent]);
+
+  const handleSessionAgentChange = useCallback(
+    async (name: string) => {
+      setSelectedSessionAgent(name);
+      const sid = activeSessionIdRef.current;
+      if (!sid) return;
+      try {
+        await patchSessionApi(sid, { agentName: name });
+        await refreshSessions();
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [refreshSessions],
+  );
 
   const handleModelChange = useCallback(
     async (model: string) => {
@@ -214,7 +266,17 @@ export function useChatApp() {
           console.error(e);
         }
       }
-      const { id } = await createSessionApi(selectedModel);
+      let agentForNewChat = serverDefaultChatAgent;
+      try {
+        agentForNewChat = await fetchDefaultChatAgent();
+        setServerDefaultChatAgent(agentForNewChat);
+      } catch {
+        /* use serverDefaultChatAgent / last known */
+      }
+      const { id } = await createSessionApi({
+        model: selectedModel,
+        agentName: agentForNewChat,
+      });
       await refreshSessions();
       await loadSession(id);
       setSidebarOpen(false);
@@ -223,7 +285,7 @@ export function useChatApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadSession, messages.length, refreshSessions, selectedModel]);
+  }, [loadSession, messages.length, refreshSessions, selectedModel, serverDefaultChatAgent]);
 
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -236,7 +298,8 @@ export function useChatApp() {
 
   const fetchDebugData = useCallback(async (id: string) => {
     try {
-      const spRes = await fetch("/api/agent/system-prompt");
+      const agentName = selectedSessionAgentRef.current;
+      const spRes = await fetch(`/api/agent/system-prompt?${new URLSearchParams({ agentName })}`);
       const spJson = (await spRes.json()) as { systemPrompt?: string };
       const stored = await fetchSession(id);
       setDebugData({
@@ -341,7 +404,7 @@ export function useChatApp() {
               const cd = typeof data.contentDelta === "string" ? data.contentDelta : "";
               const td = typeof data.thinkingDelta === "string" ? data.thinkingDelta : "";
               const agent = typeof data.agentName === "string" ? data.agentName : "";
-              if (cd && agent === "general_agent") setStreamingContent((prev) => prev + cd);
+              if (cd && agent === selectedSessionAgentRef.current) setStreamingContent((prev) => prev + cd);
               if (td) setStreamingThinking((prev) => prev + td);
             } else if (data.type === "step") {
               const step = data.step as MessageStep;
@@ -554,7 +617,8 @@ export function useChatApp() {
     setDebugOpen(false);
     setDebugData(null);
     setSidebarOpen(false);
-  }, [messages.length, refreshSessions]);
+    setSelectedSessionAgent(serverDefaultChatAgent);
+  }, [messages.length, refreshSessions, serverDefaultChatAgent]);
 
   const saveSessionTitle = useCallback(
     async (title: string) => {
@@ -610,6 +674,10 @@ export function useChatApp() {
     ollamaModels,
     modelsLoadError,
     selectedModel,
+    chatAgents,
+    selectedSessionAgent,
+    handleSessionAgentChange,
+    refreshAgentDefaults,
     ollamaConnected,
     ollamaDisconnected,
     ollamaReady,

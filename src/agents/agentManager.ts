@@ -1,7 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
 import { BaseAgent } from './BaseAgent';
 import { CreateFileTool } from "../tools/create_file";
 import { DeleteFileTool } from "../tools/delete_file";
@@ -15,15 +11,21 @@ import { BashTool } from "../tools/bash";
 import type { BaseTool } from '../tools/BaseTool';
 import type { RunContext } from '../RunContext';
 import { AgentTool } from '../tools/AgentTool';
+import { getAgentByName } from '../db/index';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const agentsJsonPath = path.join(__dirname, 'agents.json');
-const agentsData = JSON.parse(fs.readFileSync(agentsJsonPath, 'utf8'));
+export const BUILTIN_TOOLS = [
+  "create_file",
+  "delete_file",
+  "grep",
+  "list_files",
+  "modify_plan",
+  "read_file",
+  "run_tsc",
+  "web_search",
+  "bash",
+] as const;
 
 export const agentManager = {
-  /** Subagents inherit the parent agent's Ollama model when `ctx` is provided. */
   createAgentForContext(agentName: string, ctx?: RunContext): BaseAgent {
     const agent = this.createAgent(agentName);
     const parentModel = ctx?.agentInstance?.model;
@@ -34,15 +36,14 @@ export const agentManager = {
   },
 
   createAgent(agentName: string): BaseAgent {
-    const config = agentsData.agents.find((a: any) => a.name === agentName);
+    const config = getAgentByName(agentName);
     if (!config) {
-      throw new Error(`Agent configuration for '${agentName}' not found in agents.json`);
+      throw new Error(`Agent configuration for '${agentName}' not found in database`);
     }
 
-    // BaseAgent constructor: name, description, tools?, model?, systemPrompt?
     const agent = new BaseAgent(config.name, config.description, undefined, undefined, config.system_prompt);
 
-    if (config.tools && Array.isArray(config.tools)) {
+    if (config.tools.length > 0) {
       const tools = config.tools.map((t: string) => this.getToolInstance(t));
       agent.addTools(tools);
     }
@@ -51,12 +52,12 @@ export const agentManager = {
   },
 
   getToolInstance(toolName: string): BaseTool {
-
     if (toolName.endsWith('_agent')) {
-      return new AgentTool(toolName, agentsData.agents.find((a: any) => a.name === toolName)?.description);
+      const agentRow = getAgentByName(toolName);
+      return new AgentTool(toolName, agentRow?.description ?? toolName);
     }
 
-    switch (toolName) { 
+    switch (toolName) {
       case 'create_file': return new CreateFileTool();
       case 'delete_file': return new DeleteFileTool();
       case 'grep': return new GrepTool();
