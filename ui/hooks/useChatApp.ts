@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { SessionSummary, Message, MessageStep, DebugData, OllamaModelOption } from "../types";
 import { traceStepsForModal } from "../components/ExecutionTrace";
-import { loadChatsV1, removeStoredSession, upsertStoredSession } from "../persist/chats";
+import {
+  createSessionApi,
+  deleteSessionApi,
+  fetchSession,
+  fetchSessionSummaries,
+  patchSessionApi,
+} from "../persist/sessions";
 import { loadPreferredModel, savePreferredModel } from "../persist/modelPreference";
-import { storedSessionToSummary } from "../persist/preview";
 import { readSseBlocks } from "../lib/readSseBlocks";
-import { isStoredSessionEmpty, randomSessionId } from "../lib/sessionUtils";
 
 const OLLAMA_HEALTH_POLL_MS = 3000;
 
@@ -40,6 +44,10 @@ export function useChatApp() {
   debugOpenRef.current = debugOpen;
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
+  const modelMessagesRef = useRef<Array<Record<string, unknown>> | null>(null);
+  const loadGenRef = useRef(0);
+  const activeSessionIdRef = useRef<string | null>(null);
+  activeSessionIdRef.current = activeSessionId;
 
   const fetchOllamaHealth = useCallback(async () => {
     try {
@@ -103,86 +111,119 @@ export function useChatApp() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!activeSessionId) return;
-    const stored = loadChatsV1().find((s) => s.id === activeSessionId);
-    const preference = stored?.model?.trim() || loadPreferredModel(serverDefaultModel);
-    const names = new Set(ollamaModels.map((m) => m.name));
-    let next = preference;
-    if (names.size > 0 && !names.has(next)) {
-      next = names.has(serverDefaultModel) ? serverDefaultModel : (ollamaModels[0]?.name ?? next);
+  const refreshSessions = useCallback(async () => {
+    try {
+      const list = await fetchSessionSummaries();
+      setSessions(list);
+    } catch (e) {
+      console.error(e);
+      setSessions([]);
     }
-    setSelectedModel(next);
-  }, [activeSessionId, ollamaModels, serverDefaultModel]);
-
-  const handleModelChange = useCallback(
-    (model: string) => {
-      setSelectedModel(model);
-      savePreferredModel(model);
-      if (activeSessionId) {
-        upsertStoredSession({ id: activeSessionId, model, updatedAt: Date.now() });
-      }
-    },
-    [activeSessionId],
-  );
-
-  const refreshSessions = useCallback(() => {
-    const list = loadChatsV1()
-      .map(storedSessionToSummary)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-    setSessions(list);
   }, []);
 
   useEffect(() => {
-    refreshSessions();
+    let cancelled = false;
+    (async () => {
+      if (!cancelled) await refreshSessions();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshSessions]);
 
-  const loadSession = useCallback((id: string) => {
+  useEffect(() => {
+    if (!activeSessionId) return;
+    let cancelled = false;
+    (async () => {
+      const stored = await fetchSession(activeSessionId);
+      if (cancelled) return;
+      const preference = stored?.model?.trim() || loadPreferredModel(serverDefaultModel);
+      const names = new Set(ollamaModels.map((m) => m.name));
+      let next = preference;
+      if (names.size > 0 && !names.has(next)) {
+        next = names.has(serverDefaultModel) ? serverDefaultModel : (ollamaModels[0]?.name ?? next);
+      }
+      setSelectedModel(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, ollamaModels, serverDefaultModel]);
+
+  const handleModelChange = useCallback(
+    async (model: string) => {
+      setSelectedModel(model);
+      savePreferredModel(model);
+      const sid = activeSessionIdRef.current;
+      if (sid) {
+        try {
+          await patchSessionApi(sid, { model });
+          await refreshSessions();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    },
+    [refreshSessions],
+  );
+
+  const loadSession = useCallback(async (id: string) => {
+    const gen = ++loadGenRef.current;
     setActiveSessionId(id);
     setMessages([]);
     setStreamingStep(null);
     setStreamingSteps([]);
     setEditingUserIndex(null);
     setTruncateConfirm(null);
-    const stored = loadChatsV1().find((s) => s.id === id);
-    if (stored?.history?.length) {
-      setMessages(stored.history);
+    modelMessagesRef.current = null;
+    try {
+      const stored = await fetchSession(id);
+      if (gen !== loadGenRef.current) return;
+      if (stored?.history?.length) setMessages(stored.history);
+      modelMessagesRef.current = stored?.modelMessages ?? null;
+    } catch (e) {
+      if (gen !== loadGenRef.current) return;
+      console.error(e);
     }
   }, []);
 
   const switchToSession = useCallback(
-    (id: string) => {
-      if (activeSessionId && activeSessionId !== id && isStoredSessionEmpty(activeSessionId)) {
-        removeStoredSession(activeSessionId);
-        refreshSessions();
+    async (id: string) => {
+      const curId = activeSessionIdRef.current;
+      if (curId && curId !== id && messages.length === 0) {
+        try {
+          await deleteSessionApi(curId);
+        } catch (e) {
+          console.error(e);
+        }
+        await refreshSessions();
       }
-      loadSession(id);
+      await loadSession(id);
     },
-    [activeSessionId, loadSession, refreshSessions],
+    [loadSession, messages.length, refreshSessions],
   );
 
-  const createSession = useCallback(() => {
+  const createSession = useCallback(async () => {
     setIsLoading(true);
     try {
-      if (activeSessionId && isStoredSessionEmpty(activeSessionId)) {
-        removeStoredSession(activeSessionId);
+      const curId = activeSessionIdRef.current;
+      if (curId && messages.length === 0) {
+        try {
+          await deleteSessionApi(curId);
+        } catch (e) {
+          console.error(e);
+        }
       }
-      const id = randomSessionId();
-      upsertStoredSession({
-        id,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        history: [],
-        customTitle: null,
-      });
-      refreshSessions();
-      loadSession(id);
+      const { id } = await createSessionApi(selectedModel);
+      await refreshSessions();
+      await loadSession(id);
       setSidebarOpen(false);
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  }, [activeSessionId, loadSession, refreshSessions]);
+  }, [loadSession, messages.length, refreshSessions, selectedModel]);
 
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -197,7 +238,7 @@ export function useChatApp() {
     try {
       const spRes = await fetch("/api/agent/system-prompt");
       const spJson = (await spRes.json()) as { systemPrompt?: string };
-      const stored = loadChatsV1().find((s) => s.id === id);
+      const stored = await fetchSession(id);
       setDebugData({
         systemPrompt: spJson.systemPrompt ?? "",
         history: stored?.history ?? [],
@@ -215,7 +256,8 @@ export function useChatApp() {
       messageText: string,
       options: { rebuildModelMessages: boolean },
     ) => {
-      if (!messageText.trim() || !activeSessionId) return;
+      const sid = activeSessionIdRef.current;
+      if (!messageText.trim() || !sid) return;
       if (!ollamaReady) return;
 
       const msg = messageText.trim();
@@ -227,26 +269,28 @@ export function useChatApp() {
 
       const nextHistory: Message[] = [...priorMessages, { role: "user" as const, content: msg }];
       setMessages(nextHistory);
-      upsertStoredSession({
-        id: activeSessionId,
-        history: nextHistory,
-        updatedAt: Date.now(),
-        ...(options.rebuildModelMessages ? { modelMessages: null } : {}),
-      });
 
-      const failWithAssistantError = (errText: string) => {
+      const failWithAssistantError = async (errText: string) => {
         const failedHistory: Message[] = [
           ...priorMessages,
           { role: "user", content: msg },
           { role: "assistant", content: `Error: ${errText}` },
         ];
         setMessages(failedHistory);
-        upsertStoredSession({ id: activeSessionId!, history: failedHistory, updatedAt: Date.now() });
-        refreshSessions();
+        try {
+          await patchSessionApi(sid, {
+            history: failedHistory,
+            modelMessages: options.rebuildModelMessages ? null : modelMessagesRef.current,
+          });
+        } catch (e) {
+          console.error(e);
+        }
+        await refreshSessions();
       };
 
-      const snap = loadChatsV1().find((s) => s.id === activeSessionId);
-      const modelMessagesPayload = options.rebuildModelMessages ? null : (snap?.modelMessages ?? null);
+      const modelMessagesPayload = options.rebuildModelMessages
+        ? null
+        : modelMessagesRef.current;
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -258,6 +302,7 @@ export function useChatApp() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              sessionId: sid,
               message: msg,
               history: priorMessages,
               model: selectedModel,
@@ -268,24 +313,26 @@ export function useChatApp() {
         } catch (err) {
           if (controller.signal.aborted) return;
           console.error(err);
-          failWithAssistantError(err instanceof Error ? err.message : "Network error");
+          await failWithAssistantError(err instanceof Error ? err.message : "Network error");
           return;
         }
 
         if (!res.ok) {
           const errBody = (await res.json().catch(() => ({}))) as { error?: string };
-          failWithAssistantError(typeof errBody.error === "string" ? errBody.error : res.statusText);
+          await failWithAssistantError(
+            typeof errBody.error === "string" ? errBody.error : res.statusText,
+          );
           return;
         }
 
         const reader = res.body?.getReader();
         if (!reader) {
-          failWithAssistantError("No response body");
+          await failWithAssistantError("No response body");
           return;
         }
 
         try {
-          await readSseBlocks(reader, (data) => {
+          await readSseBlocks(reader, async (data) => {
             if (data.type === "chat_started") {
               if (typeof data.requestId === "string") {
                 activeRequestIdRef.current = data.requestId;
@@ -311,43 +358,50 @@ export function useChatApp() {
               setStreamingSteps([]);
               setStreamingContent("");
               setStreamingThinking("");
-              const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
-              setMessages(hist);
-              upsertStoredSession({
-                id: activeSessionId!,
-                history: hist,
-                modelMessages: data.modelMessages as Array<Record<string, unknown>> | undefined,
-                updatedAt: Date.now(),
-              });
-              refreshSessions();
-              if (debugOpenRef.current) void fetchDebugData(activeSessionId!);
+              try {
+                const s = await fetchSession(sid);
+                if (s?.history?.length) setMessages(s.history);
+                modelMessagesRef.current = s?.modelMessages ?? null;
+              } catch (e) {
+                console.error(e);
+                const assistantContent = typeof data.result === "string" ? data.result : "";
+                const steps = (Array.isArray(data.steps) ? data.steps : []) as MessageStep[];
+                setMessages([
+                  ...priorMessages,
+                  { role: "user", content: msg },
+                  { role: "assistant", content: assistantContent, steps },
+                ]);
+              }
+              await refreshSessions();
+              if (debugOpenRef.current) void fetchDebugData(sid);
             } else if (data.type === "chat_aborted") {
               setStreamingStep(null);
               setStreamingSteps([]);
               setStreamingContent("");
               setStreamingThinking("");
               const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
-              setMessages(hist);
-              upsertStoredSession({
-                id: activeSessionId!,
-                history: hist,
-                modelMessages: data.modelMessages as Array<Record<string, unknown>> | undefined,
-                updatedAt: Date.now(),
-              });
-              refreshSessions();
+              if (hist.length) setMessages(hist);
+              try {
+                const s = await fetchSession(sid);
+                if (s?.history?.length) setMessages(s.history);
+                modelMessagesRef.current = s?.modelMessages ?? null;
+              } catch (e) {
+                console.error(e);
+              }
+              await refreshSessions();
             } else if (data.type === "error") {
               setStreamingStep(null);
               setStreamingSteps([]);
               setStreamingContent("");
               setStreamingThinking("");
               const errText = typeof data.error === "string" ? data.error : "Unknown error";
-              failWithAssistantError(errText);
+              await failWithAssistantError(errText);
             }
           });
         } catch (err) {
           if (controller.signal.aborted) return;
           console.error(err);
-          failWithAssistantError(err instanceof Error ? err.message : String(err));
+          await failWithAssistantError(err instanceof Error ? err.message : String(err));
         }
       } finally {
         abortControllerRef.current = null;
@@ -355,7 +409,7 @@ export function useChatApp() {
         setChatPending(false);
       }
     },
-    [activeSessionId, fetchDebugData, ollamaReady, refreshSessions, selectedModel],
+    [fetchDebugData, ollamaReady, refreshSessions, selectedModel],
   );
 
   const stopGeneration = useCallback(() => {
@@ -381,14 +435,18 @@ export function useChatApp() {
     setStreamingThinking("");
     setChatPending(false);
 
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant" as const, content: "*Response halted by user.*" },
-    ]);
-    if (activeSessionId) {
-      upsertStoredSession({ id: activeSessionId, updatedAt: Date.now() });
-    }
-  }, [activeSessionId]);
+    setMessages((prev) => {
+      const halted: Message[] = [
+        ...prev,
+        { role: "assistant" as const, content: "*Response halted by user.*" },
+      ];
+      const sid = activeSessionIdRef.current;
+      if (sid) {
+        void patchSessionApi(sid, { history: halted }).catch((e) => console.error(e));
+      }
+      return halted;
+    });
+  }, []);
 
   const sendMessage = useCallback(
     async (e?: FormEvent) => {
@@ -423,8 +481,12 @@ export function useChatApp() {
   }, [activeSessionId, debugOpen, fetchDebugData, fetchOllamaHealth]);
 
   const dropSessionFromApp = useCallback(
-    (id: string) => {
-      removeStoredSession(id);
+    async (id: string) => {
+      try {
+        await deleteSessionApi(id);
+      } catch (e) {
+        console.error(e);
+      }
       if (activeSessionId === id) {
         setActiveSessionId(null);
         setMessages([]);
@@ -433,33 +495,52 @@ export function useChatApp() {
         setEditingUserIndex(null);
         setTruncateConfirm(null);
       }
-      refreshSessions();
+      await refreshSessions();
     },
     [activeSessionId, refreshSessions],
   );
 
   const requestDeleteSession = useCallback(
-    (id: string) => {
-      if (isStoredSessionEmpty(id)) {
-        dropSessionFromApp(id);
+    async (id: string) => {
+      if (id === activeSessionId) {
+        if (messages.length === 0) {
+          await dropSessionFromApp(id);
+          return;
+        }
+        setPendingDeleteSessionId(id);
+        return;
+      }
+      try {
+        const full = await fetchSession(id);
+        if (!full?.history?.length) {
+          await dropSessionFromApp(id);
+          return;
+        }
+      } catch {
+        setPendingDeleteSessionId(id);
         return;
       }
       setPendingDeleteSessionId(id);
     },
-    [dropSessionFromApp],
+    [activeSessionId, dropSessionFromApp, messages.length],
   );
 
-  const performDeleteSession = useCallback(() => {
+  const performDeleteSession = useCallback(async () => {
     const id = pendingDeleteSessionId;
     setPendingDeleteSessionId(null);
     if (!id) return;
-    dropSessionFromApp(id);
+    await dropSessionFromApp(id);
   }, [dropSessionFromApp, pendingDeleteSessionId]);
 
-  const goToHome = useCallback(() => {
-    if (activeSessionId && isStoredSessionEmpty(activeSessionId)) {
-      removeStoredSession(activeSessionId);
-      refreshSessions();
+  const goToHome = useCallback(async () => {
+    const curId = activeSessionIdRef.current;
+    if (curId && messages.length === 0) {
+      try {
+        await deleteSessionApi(curId);
+      } catch (e) {
+        console.error(e);
+      }
+      await refreshSessions();
     }
     setActiveSessionId(null);
     setMessages([]);
@@ -473,19 +554,21 @@ export function useChatApp() {
     setDebugOpen(false);
     setDebugData(null);
     setSidebarOpen(false);
-  }, [activeSessionId, refreshSessions]);
+  }, [messages.length, refreshSessions]);
 
   const saveSessionTitle = useCallback(
-    (title: string) => {
+    async (title: string) => {
       if (!renameSessionId) return;
       const id = renameSessionId;
-      upsertStoredSession({
-        id,
-        customTitle: title.trim().length > 0 ? title.trim() : null,
-        updatedAt: Date.now(),
-      });
+      try {
+        await patchSessionApi(id, {
+          customTitle: title.trim().length > 0 ? title.trim() : null,
+        });
+      } catch (e) {
+        console.error(e);
+      }
       setRenameSessionId(null);
-      refreshSessions();
+      await refreshSessions();
     },
     [refreshSessions, renameSessionId],
   );

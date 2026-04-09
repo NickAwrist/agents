@@ -1,6 +1,6 @@
 export function readSseBlocks(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  onData: (obj: Record<string, unknown>) => void,
+  onData: (obj: Record<string, unknown>) => void | Promise<void>,
 ): Promise<void> {
   const decoder = new TextDecoder();
   let buffer = "";
@@ -17,7 +17,7 @@ export function readSseBlocks(
         const dataLine = block.split("\n").find((l) => l.startsWith("data: "));
         if (!dataLine) continue;
         try {
-          onData(JSON.parse(dataLine.slice(6)) as Record<string, unknown>);
+          await Promise.resolve(onData(JSON.parse(dataLine.slice(6)) as Record<string, unknown>));
         } catch {
           /* ignore */
         }

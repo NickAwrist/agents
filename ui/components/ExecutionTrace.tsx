@@ -2,7 +2,7 @@ import { Bot, Wrench } from "lucide-react";
 import type { MessageStep, SubagentRun } from "../types";
 import { cx, debugBlock, eyebrowText } from "../styles";
 
-/** Fill missing per-step `agentName` inside nested runs (wire format has it; legacy snapshots may not). */
+/** Fill missing per-step `agentName` inside nested runs (wire format has it; older snapshots may not). */
 function normalizeMessageStep(step: MessageStep): MessageStep {
   const child = step.childRun;
   if (!child?.steps?.length) return step;

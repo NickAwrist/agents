@@ -17,7 +17,7 @@ export class AgentSession extends EventEmitter {
     if (m) this.generalAgent.model = m;
   }
 
-  /** Rehydrate from client persistence (localStorage) after a server restart. */
+  /** Rehydrate from the client request (history + optional Ollama message list). */
   restoreFromPersistence(payload: {
     history: { role: string; content: string; steps?: HistoryWireStep[] }[];
     modelMessages?: Array<Record<string, unknown>> | null;

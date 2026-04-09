@@ -5,11 +5,11 @@ type UseAppKeybindsOptions = {
   blockShortcuts: boolean;
   sessions: SessionSummary[];
   activeSessionId: string | null;
-  switchToSession: (id: string) => void;
-  createSession: () => void;
+  switchToSession: (id: string) => void | Promise<void>;
+  createSession: () => void | Promise<void>;
   setSidebarOpen: Dispatch<SetStateAction<boolean>>;
   setSidebarCollapsed: Dispatch<SetStateAction<boolean>>;
-  goToHome: () => void;
+  goToHome: () => void | Promise<void>;
   headerChatBusy: boolean;
 };
 

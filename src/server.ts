@@ -4,8 +4,22 @@ import crypto from "crypto";
 import ollama from "ollama";
 import type { HistoryWireStep } from "./session/AgentSession";
 import { AgentSession } from "./session/AgentSession";
+import {
+  createSessionRow,
+  deleteSessionRow,
+  getMessagesForSession,
+  getSessionById,
+  getDb,
+  listSessionSummaries,
+  parseModelMessages,
+  patchSessionRow,
+  replaceSessionMessages,
+  type WireMessage,
+} from "./db/index";
 
 const DEFAULT_CHAT_MODEL = "gemma4:31b";
+
+getDb();
 
 const activeRequests = new Map<string, AbortController>();
 
@@ -56,6 +70,115 @@ app.get("/api/models", async (_req, res) => {
   }
 });
 
+// --- Sessions (SQLite) ---
+
+app.get("/api/sessions", (_req, res) => {
+  const rows = listSessionSummaries();
+  res.json({
+    sessions: rows.map((r) => ({
+      id: r.id,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      preview: r.preview,
+    })),
+  });
+});
+
+app.get("/api/sessions/:id", (req, res) => {
+  const id = req.params.id;
+  const row = getSessionById(id);
+  if (!row) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+  const history = getMessagesForSession(id);
+  res.json({
+    id: row.id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    customTitle: row.title,
+    history,
+    modelMessages: parseModelMessages(row.model_messages),
+    model: row.model,
+  });
+});
+
+app.post("/api/sessions", (req, res) => {
+  const body = req.body as { model?: unknown };
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  const model =
+    typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
+  createSessionRow(id, now, model);
+  res.status(201).json({ id, createdAt: now, updatedAt: now });
+});
+
+app.patch("/api/sessions/:id", (req, res) => {
+  const id = req.params.id;
+  const row = getSessionById(id);
+  if (!row) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+  const body = req.body as {
+    customTitle?: unknown;
+    model?: unknown;
+    modelMessages?: unknown;
+    history?: unknown;
+  };
+  const now = Date.now();
+
+  if (Array.isArray(body.history)) {
+    const hist = body.history as WireMessage[];
+    const mm =
+      "modelMessages" in body
+        ? body.modelMessages === null || body.modelMessages === undefined
+          ? null
+          : Array.isArray(body.modelMessages)
+            ? (body.modelMessages as Array<Record<string, unknown>>)
+            : parseModelMessages(row.model_messages)
+        : parseModelMessages(row.model_messages);
+    const chatModel =
+      typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined;
+    replaceSessionMessages(id, hist, mm, now, chatModel);
+  }
+
+  const patch: Parameters<typeof patchSessionRow>[1] = { updated_at: now };
+  if ("customTitle" in body) {
+    const t = body.customTitle;
+    patch.title =
+      t === null || t === undefined
+        ? null
+        : typeof t === "string"
+          ? t.trim() || null
+          : null;
+  }
+  if ("model" in body && body.model !== undefined && !Array.isArray(body.history)) {
+    const m = body.model;
+    patch.model = m === null ? null : typeof m === "string" ? m.trim() || null : null;
+  }
+  if ("modelMessages" in body && !Array.isArray(body.history)) {
+    const mm = body.modelMessages;
+    patch.model_messages =
+      mm === null || mm === undefined
+        ? null
+        : Array.isArray(mm)
+          ? (mm as Array<Record<string, unknown>>)
+          : null;
+  }
+  patchSessionRow(id, patch);
+  res.json({ ok: true });
+});
+
+app.delete("/api/sessions/:id", (req, res) => {
+  const ok = deleteSessionRow(req.params.id);
+  if (!ok) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 app.post("/api/chat/abort", (req, res) => {
   const { requestId } = req.body as { requestId?: string };
   if (!requestId || !activeRequests.has(requestId)) {
@@ -69,11 +192,22 @@ app.post("/api/chat/abort", (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   const body = req.body as {
+    sessionId?: unknown;
     message?: unknown;
     history?: unknown;
     model?: unknown;
     modelMessages?: Array<Record<string, unknown>> | null;
   };
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+  if (!sessionId) {
+    res.status(400).json({ error: "sessionId required" });
+    return;
+  }
+  if (!getSessionById(sessionId)) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) {
     res.status(400).json({ error: "Missing message" });
@@ -120,6 +254,10 @@ app.post("/api/chat", async (req, res) => {
 
   safeSse({ type: "chat_started", requestId });
 
+  const persistTurn = (hist: WireMessage[], modelMessages: Array<Record<string, unknown>> | null) => {
+    replaceSessionMessages(sessionId, hist, modelMessages, Date.now(), model);
+  };
+
   const onStep = (payload: unknown) => {
     safeSse({ type: "step", ...(payload as Record<string, unknown>) });
   };
@@ -127,7 +265,17 @@ app.post("/api/chat", async (req, res) => {
     safeSse({ type: "stream_delta", ...(payload as Record<string, unknown>) });
   };
   const onAborted = (payload: unknown) => {
-    safeSse({ type: "chat_aborted", ...(payload as Record<string, unknown>) });
+    const p = payload as {
+      history?: WireMessage[];
+      modelMessages?: Array<Record<string, unknown>> | null;
+    };
+    if (Array.isArray(p.history)) {
+      persistTurn(p.history, p.modelMessages ?? null);
+    }
+    safeSse({
+      type: "chat_aborted",
+      ...(payload as Record<string, unknown>),
+    });
   };
   session.on("step", onStep);
   session.on("stream_delta", onStreamDelta);
@@ -138,12 +286,12 @@ app.post("/api/chat", async (req, res) => {
     if (!abortController.signal.aborted) {
       const lastMsg = session.history[session.history.length - 1];
       const stepsSnapshot = lastMsg?.steps || [];
+      const modelMessages = session.getModelMessagesForDebug();
+      persistTurn(session.history as WireMessage[], modelMessages);
       safeSse({
         type: "chat_done",
         result,
         steps: stepsSnapshot,
-        history: session.history,
-        modelMessages: session.getModelMessagesForDebug(),
         systemPrompt: session.getSystemPromptForDebug(),
       });
     }
