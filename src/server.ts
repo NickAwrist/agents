@@ -231,15 +231,21 @@ app.post("/api/chat", async (req, res) => {
     history?: unknown;
     model?: unknown;
     modelMessages?: Array<Record<string, unknown>> | null;
+    ephemeral?: unknown;
+    agentName?: unknown;
   };
+  const ephemeral = body.ephemeral === true;
   const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-  if (!sessionId) {
-    res.status(400).json({ error: "sessionId required" });
-    return;
-  }
-  if (!getSessionById(sessionId)) {
-    res.status(404).json({ error: "Session not found" });
-    return;
+
+  if (!ephemeral) {
+    if (!sessionId) {
+      res.status(400).json({ error: "sessionId required" });
+      return;
+    }
+    if (!getSessionById(sessionId)) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
   }
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
@@ -276,8 +282,14 @@ app.post("/api/chat", async (req, res) => {
     }
   });
 
-  const sessionRow = getSessionById(sessionId);
-  const chatAgentName = resolveSessionAgentName(sessionRow);
+  let chatAgentName: string;
+  if (ephemeral) {
+    const rawAgent = typeof body.agentName === "string" ? body.agentName.trim() : "";
+    chatAgentName = (rawAgent && getAgentByName(rawAgent)) ? rawAgent : resolveSessionAgentName(null);
+  } else {
+    const sessionRow = getSessionById(sessionId);
+    chatAgentName = resolveSessionAgentName(sessionRow);
+  }
   const session = new AgentSession(crypto.randomUUID(), { model, agentName: chatAgentName });
   session.restoreFromPersistence({
     history: body.history as { role: string; content: string; steps?: HistoryWireStep[] }[],
@@ -290,9 +302,11 @@ app.post("/api/chat", async (req, res) => {
 
   safeSse({ type: "chat_started", requestId });
 
-  const persistTurn = (hist: WireMessage[], modelMessages: Array<Record<string, unknown>> | null) => {
-    replaceSessionMessages(sessionId, hist, modelMessages, Date.now(), model);
-  };
+  const persistTurn = ephemeral
+    ? () => {}
+    : (hist: WireMessage[], modelMessages: Array<Record<string, unknown>> | null) => {
+        replaceSessionMessages(sessionId, hist, modelMessages, Date.now(), model);
+      };
 
   const onStep = (payload: unknown) => {
     safeSse({ type: "step", ...(payload as Record<string, unknown>) });
@@ -305,7 +319,7 @@ app.post("/api/chat", async (req, res) => {
       history?: WireMessage[];
       modelMessages?: Array<Record<string, unknown>> | null;
     };
-    if (Array.isArray(p.history)) {
+    if (!ephemeral && Array.isArray(p.history)) {
       persistTurn(p.history, p.modelMessages ?? null);
     }
     safeSse({
@@ -323,11 +337,12 @@ app.post("/api/chat", async (req, res) => {
       const lastMsg = session.history[session.history.length - 1];
       const stepsSnapshot = lastMsg?.steps || [];
       const modelMessages = session.getModelMessagesForDebug();
-      persistTurn(session.history as WireMessage[], modelMessages);
+      if (!ephemeral) persistTurn(session.history as WireMessage[], modelMessages);
       safeSse({
         type: "chat_done",
         result,
         steps: stepsSnapshot,
+        modelMessages: ephemeral ? modelMessages : undefined,
         systemPrompt: session.getSystemPromptForDebug(),
       });
     }

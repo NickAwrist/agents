@@ -44,6 +44,9 @@ export function useChatApp() {
   const [selectedSessionAgent, setSelectedSessionAgent] = useState("general_agent");
   const [serverDefaultChatAgent, setServerDefaultChatAgent] = useState("general_agent");
   const [ollamaConnected, setOllamaConnected] = useState<boolean | null>(null);
+  const [isEphemeral, setIsEphemeral] = useState(false);
+  const isEphemeralRef = useRef(false);
+  isEphemeralRef.current = isEphemeral;
   const debugOpenRef = useRef(false);
   debugOpenRef.current = debugOpen;
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -168,6 +171,16 @@ export function useChatApp() {
 
   useEffect(() => {
     if (!activeSessionId) return;
+    if (isEphemeral) {
+      const names = new Set(ollamaModels.map((m) => m.name));
+      const pref = loadPreferredModel(serverDefaultModel);
+      let next = pref;
+      if (names.size > 0 && !names.has(next)) {
+        next = names.has(serverDefaultModel) ? serverDefaultModel : (ollamaModels[0]?.name ?? next);
+      }
+      setSelectedModel(next);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const stored = await fetchSession(activeSessionId);
@@ -185,11 +198,12 @@ export function useChatApp() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, ollamaModels, serverDefaultModel, serverDefaultChatAgent]);
+  }, [activeSessionId, isEphemeral, ollamaModels, serverDefaultModel, serverDefaultChatAgent]);
 
   const handleSessionAgentChange = useCallback(
     async (name: string) => {
       setSelectedSessionAgent(name);
+      if (isEphemeralRef.current) return;
       const sid = activeSessionIdRef.current;
       if (!sid) return;
       try {
@@ -206,6 +220,7 @@ export function useChatApp() {
     async (model: string) => {
       setSelectedModel(model);
       savePreferredModel(model);
+      if (isEphemeralRef.current) return;
       const sid = activeSessionIdRef.current;
       if (sid) {
         try {
@@ -242,7 +257,8 @@ export function useChatApp() {
   const switchToSession = useCallback(
     async (id: string) => {
       const curId = activeSessionIdRef.current;
-      if (curId && curId !== id && messages.length === 0) {
+      const wasEphemeral = isEphemeralRef.current;
+      if (curId && curId !== id && !wasEphemeral && messages.length === 0) {
         try {
           await deleteSessionApi(curId);
         } catch (e) {
@@ -250,6 +266,7 @@ export function useChatApp() {
         }
         await refreshSessions();
       }
+      setIsEphemeral(false);
       await loadSession(id);
     },
     [loadSession, messages.length, refreshSessions],
@@ -259,13 +276,14 @@ export function useChatApp() {
     setIsLoading(true);
     try {
       const curId = activeSessionIdRef.current;
-      if (curId && messages.length === 0) {
+      if (curId && !isEphemeralRef.current && messages.length === 0) {
         try {
           await deleteSessionApi(curId);
         } catch (e) {
           console.error(e);
         }
       }
+      setIsEphemeral(false);
       let agentForNewChat = serverDefaultChatAgent;
       try {
         agentForNewChat = await fetchDefaultChatAgent();
@@ -286,6 +304,27 @@ export function useChatApp() {
       setIsLoading(false);
     }
   }, [loadSession, messages.length, refreshSessions, selectedModel, serverDefaultChatAgent]);
+
+  const createEphemeralSession = useCallback(async () => {
+    const curId = activeSessionIdRef.current;
+    if (curId && !isEphemeralRef.current && messages.length === 0) {
+      try { await deleteSessionApi(curId); } catch (e) { console.error(e); }
+      await refreshSessions();
+    }
+    const id = crypto.randomUUID();
+    setActiveSessionId(id);
+    setMessages([]);
+    setStreamingStep(null);
+    setStreamingSteps([]);
+    setStreamingContent("");
+    setStreamingThinking("");
+    setEditingUserIndex(null);
+    setTruncateConfirm(null);
+    setIsEphemeral(true);
+    modelMessagesRef.current = null;
+    setSidebarOpen(false);
+    setSelectedSessionAgent(serverDefaultChatAgent);
+  }, [messages.length, refreshSessions, serverDefaultChatAgent]);
 
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -324,6 +363,7 @@ export function useChatApp() {
       if (!ollamaReady) return;
 
       const msg = messageText.trim();
+      const ephemeral = isEphemeralRef.current;
       setChatPending(true);
       setStreamingStep(null);
       setStreamingSteps([]);
@@ -340,15 +380,17 @@ export function useChatApp() {
           { role: "assistant", content: `Error: ${errText}` },
         ];
         setMessages(failedHistory);
-        try {
-          await patchSessionApi(sid, {
-            history: failedHistory,
-            modelMessages: options.rebuildModelMessages ? null : modelMessagesRef.current,
-          });
-        } catch (e) {
-          console.error(e);
+        if (!ephemeral) {
+          try {
+            await patchSessionApi(sid, {
+              history: failedHistory,
+              modelMessages: options.rebuildModelMessages ? null : modelMessagesRef.current,
+            });
+          } catch (e) {
+            console.error(e);
+          }
+          await refreshSessions();
         }
-        await refreshSessions();
       };
 
       const modelMessagesPayload = options.rebuildModelMessages
@@ -361,16 +403,22 @@ export function useChatApp() {
       try {
         let res: Response;
         try {
+          const chatBody: Record<string, unknown> = {
+            message: msg,
+            history: priorMessages,
+            model: selectedModel,
+            modelMessages: modelMessagesPayload,
+          };
+          if (ephemeral) {
+            chatBody.ephemeral = true;
+            chatBody.agentName = selectedSessionAgentRef.current;
+          } else {
+            chatBody.sessionId = sid;
+          }
           res = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sessionId: sid,
-              message: msg,
-              history: priorMessages,
-              model: selectedModel,
-              modelMessages: modelMessagesPayload,
-            }),
+            body: JSON.stringify(chatBody),
             signal: controller.signal,
           });
         } catch (err) {
@@ -421,12 +469,7 @@ export function useChatApp() {
               setStreamingSteps([]);
               setStreamingContent("");
               setStreamingThinking("");
-              try {
-                const s = await fetchSession(sid);
-                if (s?.history?.length) setMessages(s.history);
-                modelMessagesRef.current = s?.modelMessages ?? null;
-              } catch (e) {
-                console.error(e);
+              if (ephemeral) {
                 const assistantContent = typeof data.result === "string" ? data.result : "";
                 const steps = (Array.isArray(data.steps) ? data.steps : []) as MessageStep[];
                 setMessages([
@@ -434,8 +477,26 @@ export function useChatApp() {
                   { role: "user", content: msg },
                   { role: "assistant", content: assistantContent, steps },
                 ]);
+                if (Array.isArray(data.modelMessages)) {
+                  modelMessagesRef.current = data.modelMessages as Array<Record<string, unknown>>;
+                }
+              } else {
+                try {
+                  const s = await fetchSession(sid);
+                  if (s?.history?.length) setMessages(s.history);
+                  modelMessagesRef.current = s?.modelMessages ?? null;
+                } catch (e) {
+                  console.error(e);
+                  const assistantContent = typeof data.result === "string" ? data.result : "";
+                  const steps = (Array.isArray(data.steps) ? data.steps : []) as MessageStep[];
+                  setMessages([
+                    ...priorMessages,
+                    { role: "user", content: msg },
+                    { role: "assistant", content: assistantContent, steps },
+                  ]);
+                }
+                await refreshSessions();
               }
-              await refreshSessions();
               if (debugOpenRef.current) void fetchDebugData(sid);
             } else if (data.type === "chat_aborted") {
               setStreamingStep(null);
@@ -444,14 +505,16 @@ export function useChatApp() {
               setStreamingThinking("");
               const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
               if (hist.length) setMessages(hist);
-              try {
-                const s = await fetchSession(sid);
-                if (s?.history?.length) setMessages(s.history);
-                modelMessagesRef.current = s?.modelMessages ?? null;
-              } catch (e) {
-                console.error(e);
+              if (!ephemeral) {
+                try {
+                  const s = await fetchSession(sid);
+                  if (s?.history?.length) setMessages(s.history);
+                  modelMessagesRef.current = s?.modelMessages ?? null;
+                } catch (e) {
+                  console.error(e);
+                }
+                await refreshSessions();
               }
-              await refreshSessions();
             } else if (data.type === "error") {
               setStreamingStep(null);
               setStreamingSteps([]);
@@ -503,9 +566,11 @@ export function useChatApp() {
         ...prev,
         { role: "assistant" as const, content: "*Response halted by user.*" },
       ];
-      const sid = activeSessionIdRef.current;
-      if (sid) {
-        void patchSessionApi(sid, { history: halted }).catch((e) => console.error(e));
+      if (!isEphemeralRef.current) {
+        const sid = activeSessionIdRef.current;
+        if (sid) {
+          void patchSessionApi(sid, { history: halted }).catch((e) => console.error(e));
+        }
       }
       return halted;
     });
@@ -597,7 +662,7 @@ export function useChatApp() {
 
   const goToHome = useCallback(async () => {
     const curId = activeSessionIdRef.current;
-    if (curId && messages.length === 0) {
+    if (curId && !isEphemeralRef.current && messages.length === 0) {
       try {
         await deleteSessionApi(curId);
       } catch (e) {
@@ -605,6 +670,7 @@ export function useChatApp() {
       }
       await refreshSessions();
     }
+    setIsEphemeral(false);
     setActiveSessionId(null);
     setMessages([]);
     setStreamingStep(null);
@@ -682,8 +748,10 @@ export function useChatApp() {
     ollamaDisconnected,
     ollamaReady,
     handleModelChange,
+    isEphemeral,
     switchToSession,
     createSession,
+    createEphemeralSession,
     goToHome,
     sendMessage,
     stopGeneration,

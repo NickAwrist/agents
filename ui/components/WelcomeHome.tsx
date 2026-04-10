@@ -1,4 +1,4 @@
-import { MessageSquarePlus, Sparkles } from "lucide-react";
+import { EyeOff, MessageSquarePlus, Sparkles } from "lucide-react";
 import type { SessionSummary } from "../types";
 import { cx, primaryButton } from "../styles";
 
@@ -6,10 +6,11 @@ type WelcomeHomeProps = {
   sessions: SessionSummary[];
   isLoading: boolean;
   onNewChat: () => void;
+  onNewEphemeralChat: () => void;
   onOpenSession: (id: string) => void;
 };
 
-export function WelcomeHome({ sessions, isLoading, onNewChat, onOpenSession }: WelcomeHomeProps) {
+export function WelcomeHome({ sessions, isLoading, onNewChat, onNewEphemeralChat, onOpenSession }: WelcomeHomeProps) {
   return (
     <div className="ui-animate-fade-in mx-auto flex h-full w-full max-w-[28rem] flex-col items-center justify-center gap-8 px-6 pb-12 pt-8">
       <div className="flex flex-col items-center text-center">
@@ -25,10 +26,20 @@ export function WelcomeHome({ sessions, isLoading, onNewChat, onOpenSession }: W
         <p className="m-0 max-w-[34ch] text-[0.9375rem] leading-[1.65] text-muted-foreground">
           Your conversations live in the sidebar. Open one to continue, or create a new thread for a clean run.
         </p>
-        <button type="button" onClick={onNewChat} disabled={isLoading} className={cx(primaryButton, "mt-[22px]")}>
-          <MessageSquarePlus size={16} />
-          New chat
-        </button>
+        <div className="mt-[22px] flex items-center gap-2.5">
+          <button type="button" onClick={onNewChat} disabled={isLoading} className={cx(primaryButton)}>
+            <MessageSquarePlus size={16} />
+            New chat
+          </button>
+          <button
+            type="button"
+            onClick={onNewEphemeralChat}
+            className="inline-flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-2.5 text-[0.8125rem] font-semibold text-amber-400 transition-[color,background-color,border-color,transform] duration-150 ease-out hover:border-amber-500/40 hover:bg-amber-500/10 active:scale-[0.98] active:bg-amber-500/15"
+          >
+            <EyeOff size={16} />
+            Ephemeral
+          </button>
+        </div>
       </div>
       {sessions.length > 0 && (
         <div className="w-full border-t border-border-subtle pt-2">

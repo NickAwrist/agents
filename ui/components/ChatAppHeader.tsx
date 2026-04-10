@@ -1,4 +1,4 @@
-import { Bug, PanelLeft, X } from "lucide-react";
+import { Bug, EyeOff, PanelLeft, X } from "lucide-react";
 import { ModelSelectBar } from "./ModelSelectBar";
 import { AgentSelectBar } from "./AgentSelectBar";
 import { cx, iconButton } from "../styles";
@@ -18,6 +18,7 @@ type ChatAppHeaderProps = {
   headerChatBusy: boolean;
   debugOpen: boolean;
   onToggleDebug: () => void;
+  isEphemeral?: boolean;
 };
 
 export function ChatAppHeader({
@@ -34,6 +35,7 @@ export function ChatAppHeader({
   headerChatBusy,
   debugOpen,
   onToggleDebug,
+  isEphemeral,
 }: ChatAppHeaderProps) {
   return (
     <div
@@ -56,6 +58,12 @@ export function ChatAppHeader({
         </button>
         {activeSessionId && (
           <div className="flex min-w-0 items-center gap-1.5">
+            {isEphemeral && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-amber-400">
+                <EyeOff size={12} />
+                Ephemeral
+              </span>
+            )}
             <ModelSelectBar
               ollamaModels={ollamaModels}
               modelsLoadError={modelsLoadError}

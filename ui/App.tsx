@@ -72,6 +72,7 @@ export default function App() {
                 app.switchToSession(id);
               }}
               onNewSession={() => { setCurrentView("chat"); app.createSession(); }}
+              onNewEphemeralSession={() => { setCurrentView("chat"); app.createEphemeralSession(); }}
               onRenameSession={(id) => app.setRenameSessionId(id)}
               onDeleteSession={app.requestDeleteSession}
               isLoading={app.isLoading}
@@ -107,6 +108,7 @@ export default function App() {
                   headerChatBusy={app.headerChatBusy}
                   debugOpen={app.debugOpen}
                   onToggleDebug={app.toggleDebug}
+                  isEphemeral={app.isEphemeral}
                 />
 
                 <section className={cx("flex h-full min-h-0 overflow-x-hidden", !app.activeSessionId && "pt-0")}>
@@ -138,6 +140,7 @@ export default function App() {
                       sessions={app.sessions}
                       isLoading={app.isLoading}
                       onNewChat={app.createSession}
+                      onNewEphemeralChat={app.createEphemeralSession}
                       onOpenSession={app.switchToSession}
                     />
                   )}
