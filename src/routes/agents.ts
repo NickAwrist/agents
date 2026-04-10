@@ -106,7 +106,9 @@ router.put("/api/agents/:id", (req, res) => {
 router.delete("/api/agents/:id", (req, res) => {
   const ok = deleteAgentRow(req.params.id);
   if (!ok) {
-    res.status(400).json({ error: "Agent not found or is a default agent" });
+    res.status(400).json({
+      error: "Agent not found or cannot delete the required general_agent fallback",
+    });
     return;
   }
   res.json({ ok: true });

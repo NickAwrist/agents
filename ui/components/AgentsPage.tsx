@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Plus, Save, Trash2, Bot, Wrench, ArrowLeft } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Plus, Save, Trash2, Bot, Wrench, ArrowLeft, MoreVertical } from "lucide-react";
 import { cx, primaryButton, secondaryButton, eyebrowText } from "../styles";
 import { TruncateConfirmModal } from "./TruncateConfirmModal";
 import {
@@ -33,6 +33,12 @@ function editorFromAgent(a: AgentData): EditorState {
   };
 }
 
+const PROTECTED_AGENT_NAME = "general_agent";
+
+function canDeleteAgent(a: AgentData): boolean {
+  return a.name !== PROTECTED_AGENT_NAME;
+}
+
 export function AgentsPage({ onBack }: { onBack: () => void }) {
   const [agents, setAgents] = useState<AgentData[]>([]);
   const [builtinTools, setBuiltinTools] = useState<string[]>([]);
@@ -43,7 +49,10 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [defaultDraft, setDefaultDraft] = useState("general_agent");
   const [defaultSaving, setDefaultSaving] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const menuWrapRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     const [agentList, tools, def] = await Promise.all([
@@ -59,6 +68,17 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!(e.target instanceof Node)) return;
+      if (menuWrapRef.current?.contains(e.target)) return;
+      setMenuOpenId(null);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpenId]);
 
   const otherAgentNames = agents
     .filter((a) => a.id !== selectedId)
@@ -113,17 +133,31 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
   };
 
   const performDelete = async () => {
-    if (!selectedId) return;
-    setPendingDelete(false);
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
+    setMenuOpenId(null);
+    setDeleting(true);
+    setError(null);
     try {
-      await deleteAgentApi(selectedId);
-      setSelectedId(null);
-      setIsNew(false);
-      setEditor(emptyEditor());
+      await deleteAgentApi(id);
+      setPendingDelete(null);
+      if (selectedId === id) {
+        setSelectedId(null);
+        setIsNew(false);
+        setEditor(emptyEditor());
+      }
       await load();
     } catch (e: any) {
       setError(e.message || "Delete failed");
+    } finally {
+      setDeleting(false);
     }
+  };
+
+  const requestDeleteAgent = (a: AgentData) => {
+    if (!canDeleteAgent(a)) return;
+    setError(null);
+    setPendingDelete({ id: a.id, name: a.name });
   };
 
   const persistDefaultAgent = async (name: string, previous: string) => {
@@ -177,6 +211,12 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
         </label>
       </div>
 
+      {error && (
+        <div className="shrink-0 border-b border-red-400/20 bg-red-400/5 px-5 py-2.5 text-[0.8125rem] text-red-400">
+          {error}
+        </div>
+      )}
+
       <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] max-[700px]:grid-cols-1">
         {/* Left: agent list */}
         <div className="flex min-h-0 flex-col border-r border-border-subtle max-[700px]:border-b max-[700px]:border-r-0">
@@ -188,25 +228,81 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-            {agents.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => selectAgent(a)}
-                className={cx(
-                  "flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors duration-150",
-                  selectedId === a.id && !isNew
-                    ? "bg-muted/50 text-foreground"
-                    : "text-muted-foreground hover:bg-muted/30 hover:text-foreground",
-                )}
-              >
-                <Bot size={15} className="shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[0.8125rem] font-medium">{a.name}</div>
-                  <div className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">{a.description || "No description"}</div>
+            {agents.map((a) => {
+              const deletable = canDeleteAgent(a);
+              const active = selectedId === a.id && !isNew;
+              return (
+                <div
+                  key={a.id}
+                  className={cx(
+                    "group mb-0.5 grid items-stretch rounded-lg transition-colors duration-150",
+                    deletable ? "grid-cols-[minmax(0,1fr)_32px]" : "grid-cols-1",
+                    active ? "bg-muted/50" : "hover:bg-muted/30",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpenId(null);
+                      selectAgent(a);
+                    }}
+                    className={cx(
+                      "flex min-w-0 items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-150",
+                      active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Bot size={15} className="shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[0.8125rem] font-medium">{a.name}</div>
+                      <div className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">{a.description || "No description"}</div>
+                    </div>
+                  </button>
+                  {deletable && (
+                    <div
+                      className="relative flex items-start justify-center pr-0.5 pt-2 max-[700px]:opacity-100 md:opacity-0 md:transition-opacity md:duration-150 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+                      ref={menuOpenId === a.id ? menuWrapRef : undefined}
+                    >
+                      <button
+                        type="button"
+                        className={cx(
+                          "inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.94] active:bg-muted/70 max-[700px]:opacity-100",
+                          menuOpenId === a.id && "bg-muted text-foreground md:opacity-100",
+                        )}
+                        aria-expanded={menuOpenId === a.id}
+                        aria-haspopup="menu"
+                        aria-label="Agent options"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuOpenId((v) => (v === a.id ? null : a.id));
+                        }}
+                      >
+                        <MoreVertical size={16} />
+                      </button>
+                      {menuOpenId === a.id && (
+                        <div
+                          className="ui-animate-slide-up absolute right-0 top-full z-50 mt-1 min-w-[140px] origin-top-right rounded-lg border border-border-subtle bg-surface p-1 shadow-[0_10px_28px_rgba(0,0,0,0.4)]"
+                          role="menu"
+                        >
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-red-400 transition-[color,background-color,transform] duration-150 ease-out hover:bg-red-400/10 hover:text-red-300 active:scale-[0.99] active:bg-red-400/15"
+                            role="menuitem"
+                            disabled={deleting}
+                            onClick={() => {
+                              setMenuOpenId(null);
+                              requestDeleteAgent(a);
+                            }}
+                          >
+                            <Trash2 size={14} />
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -218,11 +314,12 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
                 <h2 className="text-[1.125rem] font-semibold text-foreground">
                   {isNew ? "New Agent" : `Edit: ${selectedAgent?.name ?? ""}`}
                 </h2>
-                {selectedAgent && selectedAgent.is_default === 0 && (
+                {selectedAgent && canDeleteAgent(selectedAgent) && (
                   <button
                     type="button"
-                    onClick={() => setPendingDelete(true)}
-                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[0.75rem] text-red-400 transition-colors hover:bg-red-400/10 hover:text-red-300"
+                    onClick={() => requestDeleteAgent(selectedAgent)}
+                    disabled={deleting}
+                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[0.75rem] text-red-400 transition-colors hover:bg-red-400/10 hover:text-red-300 disabled:pointer-events-none disabled:opacity-50"
                   >
                     <Trash2 size={14} />
                     Delete
@@ -246,12 +343,13 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
                 {/* Description */}
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[0.75rem] font-medium text-muted-foreground">Description</span>
-                  <input
-                    type="text"
+                  <textarea
                     value={editor.description}
                     onChange={(e) => setEditor((p) => ({ ...p, description: e.target.value }))}
                     placeholder="What this agent does..."
+                    rows={2}
                     className="rounded-lg border border-border-subtle bg-background px-3 py-2 text-[0.8125rem] text-foreground outline-none transition-colors focus:border-border placeholder:text-muted-foreground/50"
+                    style={{ resize: "vertical" }}
                   />
                 </label>
 
@@ -272,7 +370,7 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
                 <fieldset className="flex flex-col gap-2">
                   <legend className="mb-1 flex items-center gap-1.5 text-[0.75rem] font-medium text-muted-foreground">
                     <Wrench size={13} />
-                    Built-in Tools
+                    Tools
                   </legend>
                   <div className="flex flex-wrap gap-2">
                     {builtinTools.map((tool) => {
@@ -301,7 +399,7 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
                   <fieldset className="flex flex-col gap-2">
                     <legend className="mb-1 flex items-center gap-1.5 text-[0.75rem] font-medium text-muted-foreground">
                       <Bot size={13} />
-                      Subagents (added as tools)
+                      Subagents
                     </legend>
                     <div className="flex flex-wrap gap-2">
                       {otherAgentNames.map((name) => {
@@ -324,12 +422,6 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
                       })}
                     </div>
                   </fieldset>
-                )}
-
-                {error && (
-                  <div className="rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-[0.8125rem] text-red-400">
-                    {error}
-                  </div>
                 )}
 
                 {/* Save */}
@@ -361,9 +453,11 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
       {pendingDelete && (
         <TruncateConfirmModal
           title="Delete this agent?"
-          description="This agent will be removed. Sessions that used it will switch to general_agent. This cannot be undone."
+          description={`Remove “${pendingDelete.name}” from your agents. Sessions that used it will switch to ${PROTECTED_AGENT_NAME}. This cannot be undone.`}
           confirmLabel="Delete"
-          onClose={() => setPendingDelete(false)}
+          busyConfirmLabel="Deleting…"
+          busy={deleting}
+          onClose={() => setPendingDelete(null)}
           onConfirm={() => void performDelete()}
         />
       )}

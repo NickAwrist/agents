@@ -468,11 +468,11 @@ export function updateAgentRow(
 
 export function deleteAgentRow(id: string): boolean {
   const db = getDb();
-  const row = db
-    .query("SELECT name FROM agents WHERE id = ? AND is_default = 0")
-    .get(id) as { name: string } | null;
-  if (!row) return false;
   const fallback = "general_agent";
+  const row = db
+    .query("SELECT name FROM agents WHERE id = ? AND name != ?")
+    .get(id, fallback) as { name: string } | null;
+  if (!row) return false;
   db.run("UPDATE app_settings SET value = ? WHERE key = ? AND value = ?", [
     fallback,
     DEFAULT_CHAT_AGENT_KEY,
