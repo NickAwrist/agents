@@ -71,6 +71,7 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
               builtinTools={p.builtinTools}
               otherAgentNames={p.otherAgentNames}
               saving={p.saving}
+              saveDisabled={!p.editorDirty || p.saving}
               deleting={p.deleting}
               onSave={() => void p.handleSave()}
               onCancelEdit={() => {

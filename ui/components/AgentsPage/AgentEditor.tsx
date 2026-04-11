@@ -13,6 +13,7 @@ type Props = {
   builtinTools: string[];
   otherAgentNames: string[];
   saving: boolean;
+  saveDisabled: boolean;
   deleting: boolean;
   onSave: () => void;
   onCancelEdit: () => void;
@@ -28,6 +29,7 @@ export function AgentEditor({
   builtinTools,
   otherAgentNames,
   saving,
+  saveDisabled,
   deleting,
   onSave,
   onCancelEdit,
@@ -164,9 +166,15 @@ export function AgentEditor({
         )}
 
         <div className="flex items-center gap-3 pt-2">
-          <button type="button" onClick={onSave} disabled={saving} className={cx(primaryButton)}>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saveDisabled}
+            aria-busy={saving}
+            className={cx(primaryButton, saveDisabled && "opacity-60")}
+          >
             <Save size={15} />
-            {saving ? "Saving..." : "Save"}
+            Save
           </button>
           {!isNew && (
             <button type="button" onClick={onCancelEdit} className={secondaryButton}>

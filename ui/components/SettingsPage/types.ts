@@ -5,13 +5,13 @@ export type SettingsTab = "general" | "image-generation";
 
 export type ComfyUITestState =
   | { status: "idle" }
-  | { status: "loading" }
+  | { status: "loading"; holdConnected?: boolean }
   | { status: "ok" }
   | { status: "err"; message: string };
 
 export type OllamaTestState =
   | { status: "idle" }
-  | { status: "loading" }
+  | { status: "loading"; previousVersion?: string; holdSavedConnected?: boolean }
   | { status: "ok"; version: string }
   | { status: "err"; message: string };
 
@@ -19,6 +19,7 @@ export type SettingsPageProps = {
   ollamaModels: OllamaModelOption[];
   currentSettings: UserSettings;
   ollamaHost: string;
+  ollamaConnected: boolean | null;
   comfyuiHost: string;
   comfyuiConnected: boolean | null;
   comfyuiDefaultModel: string;

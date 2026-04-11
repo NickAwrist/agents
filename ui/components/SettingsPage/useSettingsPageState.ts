@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { UserSettings } from "../../persist/userSettings";
 import type { ComfyUIConfigPayload, OllamaModelOption } from "../../types";
 import { parseSize, sizeKey } from "./constants";
@@ -8,6 +8,7 @@ type Args = {
   ollamaModels: OllamaModelOption[];
   currentSettings: UserSettings;
   ollamaHost: string;
+  ollamaConnected: boolean | null;
   comfyuiHost: string;
   comfyuiConnected: boolean | null;
   comfyuiDefaultModel: string;
@@ -21,6 +22,7 @@ export function useSettingsPageState({
   ollamaModels,
   currentSettings,
   ollamaHost,
+  ollamaConnected,
   comfyuiHost,
   comfyuiConnected,
   comfyuiDefaultModel,
@@ -81,7 +83,15 @@ export function useSettingsPageState({
   }, []);
 
   const handleTestOllama = useCallback(async () => {
-    setTestState({ status: "loading" });
+    setTestState((prev) => {
+      if (prev.status === "ok") {
+        return { status: "loading", previousVersion: prev.version };
+      }
+      if (prev.status === "idle" && ollamaConnected === true) {
+        return { status: "loading", holdSavedConnected: true };
+      }
+      return { status: "loading" };
+    });
     setError(null);
     try {
       const res = await fetch("/api/ollama/test", {
@@ -98,10 +108,13 @@ export function useSettingsPageState({
     } catch (e) {
       setTestState({ status: "err", message: e instanceof Error ? e.message : String(e) });
     }
-  }, [ollamaUri]);
+  }, [ollamaUri, ollamaConnected]);
 
   const handleTestComfyUI = useCallback(async () => {
-    setComfyTestState({ status: "loading" });
+    setComfyTestState((prev) => ({
+      status: "loading",
+      holdConnected: prev.status === "ok" || (prev.status === "idle" && comfyuiConnected === true),
+    }));
     try {
       const res = await fetch("/api/comfyui/test", {
         method: "POST",
@@ -124,11 +137,47 @@ export function useSettingsPageState({
     } catch (e) {
       setComfyTestState({ status: "err", message: e instanceof Error ? e.message : String(e) });
     }
-  }, [comfyUri]);
+  }, [comfyUri, comfyuiConnected]);
+
+  const savedComfySize = useMemo(
+    () => sizeKey(comfyuiDefaultWidth, comfyuiDefaultHeight),
+    [comfyuiDefaultWidth, comfyuiDefaultHeight],
+  );
+
+  const isDirty = useMemo(() => {
+    if (
+      settings.name !== currentSettings.name ||
+      settings.preferredFormats !== currentSettings.preferredFormats ||
+      settings.location !== currentSettings.location ||
+      settings.defaultModel !== currentSettings.defaultModel
+    ) {
+      return true;
+    }
+    if (ollamaUri !== ollamaHost) return true;
+    if (comfyUri !== comfyuiHost) return true;
+    if (comfyModel !== comfyuiDefaultModel) return true;
+    if (comfySize !== savedComfySize) return true;
+    if (comfyNegative !== comfyuiNegativePrompt) return true;
+    return false;
+  }, [
+    settings,
+    currentSettings,
+    ollamaUri,
+    ollamaHost,
+    comfyUri,
+    comfyuiHost,
+    comfyModel,
+    comfyuiDefaultModel,
+    comfySize,
+    savedComfySize,
+    comfyNegative,
+    comfyuiNegativePrompt,
+  ]);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
+      if (!isDirty) return;
       setIsSaving(true);
       setError(null);
       try {
@@ -148,7 +197,7 @@ export function useSettingsPageState({
         setIsSaving(false);
       }
     },
-    [settings, ollamaUri, comfyUri, comfyModel, comfySize, comfyNegative, onSave],
+    [isDirty, settings, ollamaUri, comfyUri, comfyModel, comfySize, comfyNegative, onSave],
   );
 
   const availableModels = ollamaModels.map((m) => m.name);
@@ -170,6 +219,7 @@ export function useSettingsPageState({
     ollamaUri,
     onOllamaUriInput,
     isSaving,
+    isDirty,
     error,
     testState,
     comfyUri,

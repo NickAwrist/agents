@@ -1,6 +1,7 @@
 import type { UserSettings } from "../../persist/userSettings";
 import { cx, eyebrowText } from "../../styles";
 import { hintClass, inputClass, labelClass, selectClass } from "./constants";
+import { ConnectionTestFeedback, ollamaConnectionFeedback } from "./ConnectionTestFeedback";
 import type { OllamaTestState } from "./types";
 
 type Props = {
@@ -8,6 +9,7 @@ type Props = {
   onFieldChange: (field: keyof UserSettings, value: string) => void;
   ollamaUri: string;
   onOllamaUriInput: (v: string) => void;
+  ollamaConnected: boolean | null;
   testState: OllamaTestState;
   onTestOllama: () => void;
   availableModels: string[];
@@ -18,6 +20,7 @@ export function GeneralSettingsTab({
   onFieldChange,
   ollamaUri,
   onOllamaUriInput,
+  ollamaConnected,
   testState,
   onTestOllama,
   availableModels,
@@ -105,10 +108,7 @@ export function GeneralSettingsTab({
             </button>
           </div>
           <p className={hintClass}>Leave empty to use the default local Ollama address (http://127.0.0.1:11434).</p>
-          {testState.status === "ok" && (
-            <p className="text-[0.75rem] text-emerald-500/90">Connected — Ollama version {testState.version}</p>
-          )}
-          {testState.status === "err" && <p className="text-[0.75rem] text-red-400">{testState.message}</p>}
+          <ConnectionTestFeedback {...ollamaConnectionFeedback(testState, ollamaConnected)} />
         </div>
         <div className="space-y-2">
           <label htmlFor="defaultModel" className={labelClass}>

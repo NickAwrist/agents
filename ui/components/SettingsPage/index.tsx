@@ -57,6 +57,7 @@ export function SettingsPage(props: SettingsPageProps) {
               onFieldChange={p.handleChange}
               ollamaUri={p.ollamaUri}
               onOllamaUriInput={p.onOllamaUriInput}
+              ollamaConnected={props.ollamaConnected}
               testState={p.testState}
               onTestOllama={p.handleTestOllama}
               availableModels={p.availableModels}
@@ -81,9 +82,14 @@ export function SettingsPage(props: SettingsPageProps) {
           )}
 
           <div className="flex justify-end border-t border-border-subtle pt-6">
-            <button type="submit" disabled={p.isSaving} className={cx(primaryButton, p.isSaving && "opacity-70")}>
+            <button
+              type="submit"
+              disabled={!p.isDirty || p.isSaving}
+              aria-busy={p.isSaving}
+              className={cx(primaryButton, (!p.isDirty || p.isSaving) && "opacity-60")}
+            >
               <Save size={15} />
-              {p.isSaving ? "Saving..." : "Save settings"}
+              Save settings
             </button>
           </div>
         </form>

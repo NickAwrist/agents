@@ -1,5 +1,6 @@
 import { cx, eyebrowText } from "../../styles";
 import { SIZE_PRESETS, hintClass, inputClass, labelClass, selectClass, sizeKey } from "./constants";
+import { comfyConnectionFeedback, ConnectionTestFeedback } from "./ConnectionTestFeedback";
 import type { ComfyUITestState } from "./types";
 
 type Props = {
@@ -59,11 +60,7 @@ export function ImageGenerationTab({
           </button>
         </div>
         <p className={hintClass}>Leave empty to use the default local ComfyUI address (http://127.0.0.1:8188).</p>
-        {comfyuiConnected === true && comfyTestState.status === "idle" && (
-          <p className="text-[0.75rem] text-emerald-500/90">Connected</p>
-        )}
-        {comfyTestState.status === "ok" && <p className="text-[0.75rem] text-emerald-500/90">Connected</p>}
-        {comfyTestState.status === "err" && <p className="text-[0.75rem] text-red-400">{comfyTestState.message}</p>}
+        <ConnectionTestFeedback {...comfyConnectionFeedback(comfyTestState, comfyuiConnected)} />
       </div>
 
       <hr className="border-border-subtle" />

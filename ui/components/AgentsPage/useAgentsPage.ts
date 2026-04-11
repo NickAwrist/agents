@@ -10,7 +10,7 @@ import {
   type AgentData,
 } from "../../persist/agents";
 import type { AgentEditorState } from "./types";
-import { canDeleteAgent, editorFromAgent, emptyEditor } from "./agentsPageUtils";
+import { canDeleteAgent, editorFromAgent, editorsEqual, emptyEditor } from "./agentsPageUtils";
 
 export function useAgentsPage() {
   const [agents, setAgents] = useState<AgentData[]>([]);
@@ -18,6 +18,7 @@ export function useAgentsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [editor, setEditor] = useState<AgentEditorState>(emptyEditor());
+  const [baselineEditor, setBaselineEditor] = useState<AgentEditorState>(() => emptyEditor());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [defaultDraft, setDefaultDraft] = useState("general_agent");
@@ -58,14 +59,18 @@ export function useAgentsPage() {
   const selectAgent = (a: AgentData) => {
     setSelectedId(a.id);
     setIsNew(false);
-    setEditor(editorFromAgent(a));
+    const next = editorFromAgent(a);
+    setEditor(next);
+    setBaselineEditor(next);
     setError(null);
   };
 
   const startNew = () => {
     setSelectedId(null);
     setIsNew(true);
-    setEditor(emptyEditor());
+    const blank = emptyEditor();
+    setEditor(blank);
+    setBaselineEditor(blank);
     setError(null);
   };
 
@@ -78,6 +83,7 @@ export function useAgentsPage() {
 
   const handleSave = async () => {
     setError(null);
+    if (editorsEqual(editor, baselineEditor)) return;
     if (!editor.name.trim()) {
       setError("Name is required");
       return;
@@ -87,12 +93,15 @@ export function useAgentsPage() {
       if (isNew) {
         const created = await createAgentApi(editor);
         await load();
+        const saved = editorFromAgent(created);
         setSelectedId(created.id);
         setIsNew(false);
-        setEditor(editorFromAgent(created));
+        setEditor(saved);
+        setBaselineEditor(saved);
       } else if (selectedId) {
         await updateAgentApi(selectedId, editor);
         await load();
+        setBaselineEditor({ ...editor, tools: [...editor.tools] });
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -151,6 +160,7 @@ export function useAgentsPage() {
 
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
   const showEditor = isNew || selectedId;
+  const editorDirty = !editorsEqual(editor, baselineEditor);
 
   return {
     agents,
@@ -162,6 +172,7 @@ export function useAgentsPage() {
     editor,
     setEditor,
     saving,
+    editorDirty,
     error,
     defaultDraft,
     defaultSaving,

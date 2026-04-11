@@ -20,3 +20,19 @@ export function editorFromAgent(a: AgentData): AgentEditorState {
     tools: [...a.tools],
   };
 }
+
+/** Stable compare; tool order does not affect equality. */
+export function editorsEqual(a: AgentEditorState, b: AgentEditorState): boolean {
+  if (
+    a.name !== b.name ||
+    a.description !== b.description ||
+    a.system_prompt !== b.system_prompt ||
+    a.include_personalization !== b.include_personalization
+  ) {
+    return false;
+  }
+  const sa = [...a.tools].sort();
+  const sb = [...b.tools].sort();
+  if (sa.length !== sb.length) return false;
+  return sa.every((t, i) => t === sb[i]);
+}
