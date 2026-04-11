@@ -1,0 +1,67 @@
+import { useCallback, useRef, useState } from "react";
+import { loadUserSettings, updateUserSettings, type UserSettings } from "../../persist/userSettings";
+import type { ComfyUIConfigPayload } from "../../types";
+
+type ComfyConfigResponse = {
+  host?: string;
+  defaultModel?: string;
+  defaultWidth?: number;
+  defaultHeight?: number;
+  negativePrompt?: string;
+};
+
+export function useSettings(
+  setOllamaHost: (host: string) => void,
+  fetchOllamaHealth: () => Promise<void>,
+  refreshOllamaModels: () => Promise<void>,
+  fetchComfyUIHealth: () => Promise<void>,
+  applyComfyConfigResponse: (data: ComfyConfigResponse) => void,
+) {
+  const [userSettings, setUserSettings] = useState<UserSettings>(() => loadUserSettings());
+  const userSettingsRef = useRef(userSettings);
+  userSettingsRef.current = userSettings;
+
+  const saveUserSettings = useCallback(
+    async (settings: UserSettings, ollamaHostToSave: string, comfyui?: ComfyUIConfigPayload) => {
+      const updated = updateUserSettings(settings);
+      setUserSettings(updated);
+      const res = await fetch("/api/ollama/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: ollamaHostToSave }),
+      });
+      if (!res.ok) throw new Error("Failed to save Ollama URL");
+      const data = (await res.json()) as { host?: string };
+      if (typeof data.host === "string") setOllamaHost(data.host);
+      void fetchOllamaHealth();
+      void refreshOllamaModels();
+
+      if (comfyui) {
+        const cRes = await fetch("/api/comfyui/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(comfyui),
+        });
+        if (cRes.ok) {
+          const cData = (await cRes.json()) as ComfyConfigResponse;
+          applyComfyConfigResponse(cData);
+        }
+        void fetchComfyUIHealth();
+      }
+    },
+    [
+      setOllamaHost,
+      fetchOllamaHealth,
+      refreshOllamaModels,
+      fetchComfyUIHealth,
+      applyComfyConfigResponse,
+    ],
+  );
+
+  return {
+    userSettings,
+    setUserSettings,
+    userSettingsRef,
+    saveUserSettings,
+  };
+}

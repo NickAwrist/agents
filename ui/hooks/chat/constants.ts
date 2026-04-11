@@ -1,0 +1,1 @@
+export const OLLAMA_HEALTH_POLL_MS = 3000;

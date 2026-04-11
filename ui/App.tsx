@@ -18,8 +18,7 @@ import { copyTextToClipboard } from "./lib/copyTextToClipboard";
 import { formatChatTranscript } from "./lib/formatChatTranscript";
 import { useChatApp } from "./hooks/useChatApp";
 import { useAppKeybinds } from "./hooks/useAppKeybinds";
-
-type AppView = "chat" | "agents" | "settings";
+import type { AppView } from "./types";
 
 export default function App() {
   const app = useChatApp();
