@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Check, Copy, ExternalLink } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import ReactMarkdown, { MarkdownHooks, type Components, type ExtraProps } from "react-markdown";
 import rehypePrettyCode from "rehype-pretty-code";
 import remarkGfm from "remark-gfm";
@@ -67,6 +67,23 @@ function isComfyUIImage(src: string | undefined): boolean {
   return typeof src === "string" && src.startsWith(COMFYUI_VIEW_PREFIX);
 }
 
+/** ComfyUI image URLs as they appear in markdown after {@link convertComfyUIUrls}, in order (deduped). */
+export function extractComfyUIImageUrls(markdown: string): string[] {
+  const source = convertComfyUIUrls(normalizeFlattenedPipeTables(markdown));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const re = /!\[[^\]]*\]\((\/api\/comfyui\/view\/[^)]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source)) !== null) {
+    const u = m[1];
+    if (u && !seen.has(u)) {
+      seen.add(u);
+      out.push(u);
+    }
+  }
+  return out;
+}
+
 function ComfyUIImageCard({ src, alt }: { src: string; alt?: string }) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
@@ -87,28 +104,20 @@ function ComfyUIImageCard({ src, alt }: { src: string; alt?: string }) {
             <div className="break-all text-[0.7rem] opacity-70">{errorDetails}</div>
           </div>
         ) : (
-          <a href={src} target="_blank" rel="noopener noreferrer" className="group/imgcard block">
-            <div className="relative">
-              {!loaded && (
-                <div className="flex h-48 w-80 items-center justify-center">
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-subtle border-t-foreground" />
-                </div>
-              )}
-              <img
-                src={src}
-                alt={alt || "Generated image"}
-                onLoad={() => setLoaded(true)}
-                onError={handleError}
-                className={cx(
-                  "max-h-[512px] max-w-full rounded-t-lg object-contain",
-                  loaded ? "block" : "hidden",
-                )}
-              />
-              <div className="absolute inset-0 flex items-center justify-center rounded-t-lg bg-black/0 opacity-0 transition-all group-hover/imgcard:bg-black/30 group-hover/imgcard:opacity-100">
-                <ExternalLink size={24} className="text-white drop-shadow-md" />
+          <div className="relative block">
+            {!loaded && (
+              <div className="flex h-48 w-80 items-center justify-center">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-subtle border-t-foreground" />
               </div>
-            </div>
-          </a>
+            )}
+            <img
+              src={src}
+              alt={alt || "Generated image"}
+              onLoad={() => setLoaded(true)}
+              onError={handleError}
+              className={cx("max-h-[512px] max-w-full object-contain", loaded ? "block" : "hidden")}
+            />
+          </div>
         )}
       </div>
     </div>

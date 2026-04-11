@@ -7,6 +7,8 @@ import {
   setComfyUIDefaultModel,
   getComfyUIImageSize,
   setComfyUIImageSize,
+  getComfyUINegativePrompt,
+  setComfyUINegativePrompt,
 } from "../db/index";
 import { Readable } from "node:stream";
 
@@ -32,6 +34,7 @@ router.get("/config", (_req, res) => {
     defaultModel: getComfyUIDefaultModel(),
     defaultWidth: width,
     defaultHeight: height,
+    negativePrompt: getComfyUINegativePrompt(),
   });
 });
 
@@ -41,6 +44,7 @@ router.put("/config", (req, res) => {
     defaultModel?: unknown;
     defaultWidth?: unknown;
     defaultHeight?: unknown;
+    negativePrompt?: unknown;
   };
   if (typeof body.host === "string") {
     setComfyUIHost(body.host);
@@ -52,12 +56,16 @@ router.put("/config", (req, res) => {
   if (typeof body.defaultWidth === "number" && typeof body.defaultHeight === "number") {
     setComfyUIImageSize(body.defaultWidth, body.defaultHeight);
   }
+  if (typeof body.negativePrompt === "string") {
+    setComfyUINegativePrompt(body.negativePrompt);
+  }
   const { width, height } = getComfyUIImageSize();
   res.json({
     host: getComfyUIHost(),
     defaultModel: getComfyUIDefaultModel(),
     defaultWidth: width,
     defaultHeight: height,
+    negativePrompt: getComfyUINegativePrompt(),
   });
 });
 

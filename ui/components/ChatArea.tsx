@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useEffect } from "react";
 import { Bot } from "lucide-react";
 import type { Message, MessageStep } from "../types";
 import { MessageItem } from "./MessageItem";
@@ -103,6 +103,8 @@ export function ChatArea({
   onRequestRetryConfirm: (userIndex: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const wasAtBottomRef = useRef(true);
   const liveMeta = getLiveStepMeta(streamingStep, streamingSteps.length, streamingContent);
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
 
@@ -112,8 +114,20 @@ export function ChatArea({
     el.scrollTop = el.scrollHeight;
   }, []);
 
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      const gap = container.scrollHeight - container.scrollTop - container.clientHeight;
+      wasAtBottomRef.current = gap < 80;
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+  }, []);
+
   useLayoutEffect(() => {
     scrollMessagesToBottom();
+    wasAtBottomRef.current = true;
     let cancelled = false;
     requestAnimationFrame(() => {
       if (cancelled) return;
@@ -127,6 +141,18 @@ export function ChatArea({
     };
   }, [messages, streamingStep, streamingSteps, streamingContent, scrollMessagesToBottom]);
 
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const ro = new ResizeObserver(() => {
+      if (wasAtBottomRef.current) {
+        scrollMessagesToBottom();
+      }
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [scrollMessagesToBottom]);
+
   return (
     <div className="relative h-full min-h-0 flex-1 overflow-x-hidden">
       <div
@@ -134,7 +160,7 @@ export function ChatArea({
         className="absolute inset-0 z-0 overflow-x-hidden overflow-y-auto px-5 pt-[calc(3.5rem+1.25rem)] max-[640px]:px-3.5 max-[640px]:pt-[calc(52px+1rem)]"
         style={{ paddingBottom: footerInset + 12 }}
       >
-        <div className="mx-auto flex min-h-min w-full max-w-3xl flex-col">
+        <div ref={contentRef} className="mx-auto flex min-h-min w-full max-w-3xl flex-col">
             {messages.length === 0 && (
               <div className="flex items-center gap-2 bg-transparent py-8 text-[0.875rem] text-muted-foreground">
                 <Bot size={14} />

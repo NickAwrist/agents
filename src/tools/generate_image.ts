@@ -2,7 +2,7 @@ import type { Tool } from "ollama";
 import { BaseTool } from "./BaseTool";
 import { getComfyUIClient } from "../comfyui/client";
 import { buildImageWorkflow } from "../comfyui/workflows";
-import { getComfyUIDefaultModel, getComfyUIImageSize } from "../db/index";
+import { getComfyUIDefaultModel, getComfyUIImageSize, getComfyUINegativePrompt } from "../db/index";
 import crypto from "node:crypto";
 
 export class GenerateImageTool extends BaseTool {
@@ -60,6 +60,7 @@ export class GenerateImageTool extends BaseTool {
 
     const workflow = buildImageWorkflow({
       prompt: args.prompt.trim(),
+      negativePrompt: getComfyUINegativePrompt(),
       checkpointName,
       width,
       height,

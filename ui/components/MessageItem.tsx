@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Check, Copy, Pencil, RotateCcw, Send, Waypoints, X } from "lucide-react";
+import { Check, Copy, Download, Pencil, RotateCcw, Send, Waypoints, X } from "lucide-react";
 import type { Message } from "../types";
-import { MarkdownMessage } from "./MarkdownMessage";
+import { extractComfyUIImageUrls, MarkdownMessage } from "./MarkdownMessage";
 import { copyTextToClipboard } from "../lib/copyTextToClipboard";
 import { traceStepsForDisplay } from "./ExecutionTrace";
 import { cx } from "../styles";
@@ -60,6 +60,8 @@ export function MessageItem({
       window.setTimeout(() => setCopied(false), 1500);
     }
   };
+
+  const comfyImageUrls = message.role === "assistant" ? extractComfyUIImageUrls(message.content) : [];
 
   const beginEdit = () => {
     const el = bubbleRef.current;
@@ -210,6 +212,21 @@ export function MessageItem({
               <Copy size={msgIconSize} strokeWidth={msgIconStroke} />
             )}
           </button>
+          {comfyImageUrls.map((href, i) => (
+            <a
+              key={`${href}-${i}`}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={msgIconBtn}
+              title="Open image"
+              aria-label={
+                comfyImageUrls.length > 1 ? `Open generated image ${i + 1} in new tab` : "Open generated image in new tab"
+              }
+            >
+              <Download size={msgIconSize} strokeWidth={msgIconStroke} />
+            </a>
+          ))}
           {message.steps && traceStepsForDisplay(message.steps).length > 0 && onViewSteps && (
             <button
               type="button"

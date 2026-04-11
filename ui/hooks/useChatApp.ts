@@ -71,6 +71,7 @@ export function useChatApp() {
   const [comfyuiDefaultModel, setComfyuiDefaultModel] = useState("");
   const [comfyuiDefaultWidth, setComfyuiDefaultWidth] = useState(1440);
   const [comfyuiDefaultHeight, setComfyuiDefaultHeight] = useState(1440);
+  const [comfyuiNegativePrompt, setComfyuiNegativePrompt] = useState("");
   const userSettingsRef = useRef(userSettings);
   userSettingsRef.current = userSettings;
   const isEphemeralRef = useRef(false);
@@ -181,12 +182,14 @@ export function useChatApp() {
           defaultModel?: string;
           defaultWidth?: number;
           defaultHeight?: number;
+          negativePrompt?: string;
         };
         if (cancelled) return;
         if (typeof data.host === "string") setComfyuiHost(data.host);
         if (typeof data.defaultModel === "string") setComfyuiDefaultModel(data.defaultModel);
         if (typeof data.defaultWidth === "number") setComfyuiDefaultWidth(data.defaultWidth);
         if (typeof data.defaultHeight === "number") setComfyuiDefaultHeight(data.defaultHeight);
+        if (typeof data.negativePrompt === "string") setComfyuiNegativePrompt(data.negativePrompt);
       } catch {
         /* ignore */
       }
@@ -818,7 +821,7 @@ export function useChatApp() {
     async (
       settings: UserSettings,
       ollamaHostToSave: string,
-      comfyui?: { host: string; defaultModel: string; defaultWidth: number; defaultHeight: number },
+      comfyui?: { host: string; defaultModel: string; defaultWidth: number; defaultHeight: number; negativePrompt: string },
     ) => {
       const updated = updateUserSettings(settings);
       setUserSettings(updated);
@@ -845,11 +848,13 @@ export function useChatApp() {
             defaultModel?: string;
             defaultWidth?: number;
             defaultHeight?: number;
+            negativePrompt?: string;
           };
           if (typeof cData.host === "string") setComfyuiHost(cData.host);
           if (typeof cData.defaultModel === "string") setComfyuiDefaultModel(cData.defaultModel);
           if (typeof cData.defaultWidth === "number") setComfyuiDefaultWidth(cData.defaultWidth);
           if (typeof cData.defaultHeight === "number") setComfyuiDefaultHeight(cData.defaultHeight);
+          if (typeof cData.negativePrompt === "string") setComfyuiNegativePrompt(cData.negativePrompt);
         }
         void fetchComfyUIHealth();
       }
@@ -906,6 +911,7 @@ export function useChatApp() {
     comfyuiDefaultModel,
     comfyuiDefaultWidth,
     comfyuiDefaultHeight,
+    comfyuiNegativePrompt,
     saveUserSettings,
     switchToSession,
     createSession,

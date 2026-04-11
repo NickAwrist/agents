@@ -106,6 +106,7 @@ export default function App() {
                 comfyuiDefaultModel={app.comfyuiDefaultModel}
                 comfyuiDefaultWidth={app.comfyuiDefaultWidth}
                 comfyuiDefaultHeight={app.comfyuiDefaultHeight}
+                comfyuiNegativePrompt={app.comfyuiNegativePrompt}
                 onSave={app.saveUserSettings}
                 onBack={() => setCurrentView("chat")}
               />

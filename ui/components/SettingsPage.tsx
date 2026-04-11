@@ -49,6 +49,7 @@ export function SettingsPage({
   comfyuiDefaultModel,
   comfyuiDefaultWidth,
   comfyuiDefaultHeight,
+  comfyuiNegativePrompt,
   onSave,
   onBack,
 }: {
@@ -60,10 +61,11 @@ export function SettingsPage({
   comfyuiDefaultModel: string;
   comfyuiDefaultWidth: number;
   comfyuiDefaultHeight: number;
+  comfyuiNegativePrompt: string;
   onSave: (
     settings: UserSettings,
     ollamaHost: string,
-    comfyui?: { host: string; defaultModel: string; defaultWidth: number; defaultHeight: number },
+    comfyui?: { host: string; defaultModel: string; defaultWidth: number; defaultHeight: number; negativePrompt: string },
   ) => Promise<void>;
   onBack: () => void;
 }) {
@@ -82,12 +84,14 @@ export function SettingsPage({
   const [comfySize, setComfySize] = useState(sizeKey(comfyuiDefaultWidth, comfyuiDefaultHeight));
   const [comfyModels, setComfyModels] = useState<string[]>([]);
   const [comfyTestState, setComfyTestState] = useState<ComfyUITestState>({ status: "idle" });
+  const [comfyNegative, setComfyNegative] = useState(comfyuiNegativePrompt);
 
   useEffect(() => { setSettings(currentSettings); }, [currentSettings]);
   useEffect(() => { setOllamaUri(ollamaHost); }, [ollamaHost]);
   useEffect(() => { setComfyUri(comfyuiHost); }, [comfyuiHost]);
   useEffect(() => { setComfyModel(comfyuiDefaultModel); }, [comfyuiDefaultModel]);
   useEffect(() => { setComfySize(sizeKey(comfyuiDefaultWidth, comfyuiDefaultHeight)); }, [comfyuiDefaultWidth, comfyuiDefaultHeight]);
+  useEffect(() => { setComfyNegative(comfyuiNegativePrompt); }, [comfyuiNegativePrompt]);
 
   useEffect(() => {
     if (comfyuiConnected) {
@@ -161,6 +165,7 @@ export function SettingsPage({
           defaultModel: comfyModel,
           defaultWidth: width,
           defaultHeight: height,
+          negativePrompt: comfyNegative,
         });
         setTestState({ status: "idle" });
         setComfyTestState({ status: "idle" });
@@ -170,7 +175,7 @@ export function SettingsPage({
         setIsSaving(false);
       }
     },
-    [settings, ollamaUri, comfyUri, comfyModel, comfySize, onSave],
+    [settings, ollamaUri, comfyUri, comfyModel, comfySize, comfyNegative, onSave],
   );
 
   const availableModels = ollamaModels.map((m) => m.name);
@@ -400,6 +405,23 @@ export function SettingsPage({
                   })}
                 </select>
                 <p className={hintClass}>Default resolution for generated images.</p>
+              </div>
+
+              <hr className="border-border-subtle" />
+
+              <div className="space-y-2">
+                <label htmlFor="comfyNegative" className={labelClass}>Negative Prompt</label>
+                <textarea
+                  id="comfyNegative"
+                  value={comfyNegative}
+                  onChange={(e) => setComfyNegative(e.target.value)}
+                  placeholder="e.g., low quality, blurry, watermark, text"
+                  rows={4}
+                  className="min-h-[100px] w-full resize-y rounded-lg border border-border-subtle bg-surface px-3 py-2 text-[0.875rem] text-foreground placeholder:text-muted-foreground transition-colors focus:border-border focus:outline-none"
+                />
+                <p className={hintClass}>
+                  Applied to every generated image. Clear the field and save to use no negative prompt.
+                </p>
               </div>
             </div>
           )}

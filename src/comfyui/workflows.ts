@@ -1,5 +1,6 @@
 export type ImageWorkflowParams = {
   prompt: string;
+  negativePrompt?: string;
   checkpointName: string;
   width: number;
   height: number;
@@ -38,7 +39,7 @@ export function buildImageWorkflow(params: ImageWorkflowParams): Record<string, 
     "4": {
       class_type: "CLIPTextEncode",
       inputs: {
-        text: "",
+        text: params.negativePrompt ?? "",
         clip: ["1", 1],
       },
     },

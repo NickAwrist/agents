@@ -11,6 +11,10 @@ const COMFYUI_HOST_KEY = "comfyui_host";
 const COMFYUI_DEFAULT_MODEL_KEY = "comfyui_default_model";
 const COMFYUI_DEFAULT_WIDTH_KEY = "comfyui_default_width";
 const COMFYUI_DEFAULT_HEIGHT_KEY = "comfyui_default_height";
+const COMFYUI_NEGATIVE_PROMPT_KEY = "comfyui_negative_prompt";
+
+export const DEFAULT_COMFYUI_NEGATIVE_PROMPT =
+  "low quality, worst quality, blurry, watermark, signature, text, bad anatomy, deformed, ugly, duplicate, extra fingers, poorly drawn hands, poorly drawn face, mutation, cropped";
 
 function migrateSessionsAgentColumn(db: Database) {
   const cols = db.query("PRAGMA table_info(sessions)").all() as { name: string }[];
@@ -285,6 +289,18 @@ export function getComfyUIImageSize(): { width: number; height: number } {
 export function setComfyUIImageSize(width: number, height: number): void {
   setAppSetting(COMFYUI_DEFAULT_WIDTH_KEY, String(width));
   setAppSetting(COMFYUI_DEFAULT_HEIGHT_KEY, String(height));
+}
+
+export function getComfyUINegativePrompt(): string {
+  const row = getDb()
+    .query("SELECT value FROM app_settings WHERE key = ?")
+    .get(COMFYUI_NEGATIVE_PROMPT_KEY) as { value: string } | null;
+  if (row === null) return DEFAULT_COMFYUI_NEGATIVE_PROMPT;
+  return row.value.trim();
+}
+
+export function setComfyUINegativePrompt(value: string): void {
+  setAppSetting(COMFYUI_NEGATIVE_PROMPT_KEY, value);
 }
 
 export function resolveSessionAgentName(row: SessionRow | null): string {
