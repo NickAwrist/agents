@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 const DB_PATH = join(process.cwd(), "data", "agents.db");
 
 const DEFAULT_CHAT_AGENT_KEY = "default_chat_agent";
+const OLLAMA_HOST_KEY = "ollama_host";
 
 function migrateSessionsAgentColumn(db: Database) {
   const cols = db.query("PRAGMA table_info(sessions)").all() as { name: string }[];
@@ -220,6 +221,21 @@ export function setDefaultChatAgent(name: string): boolean {
     [DEFAULT_CHAT_AGENT_KEY, t],
   );
   return true;
+}
+
+/** Stored value only; empty means use the default local Ollama URL. */
+export function getOllamaHost(): string {
+  const row = getDb()
+    .query("SELECT value FROM app_settings WHERE key = ?")
+    .get(OLLAMA_HOST_KEY) as { value: string } | null;
+  return row?.value?.trim() ?? "";
+}
+
+export function setOllamaHost(host: string): void {
+  getDb().run(
+    `INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [OLLAMA_HOST_KEY, host.trim()],
+  );
 }
 
 export function resolveSessionAgentName(row: SessionRow | null): string {

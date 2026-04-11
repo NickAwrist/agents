@@ -100,6 +100,7 @@ export default function App() {
               <SettingsPage
                 ollamaModels={app.ollamaModels}
                 currentSettings={app.userSettings}
+                ollamaHost={app.ollamaHost}
                 onSave={app.saveUserSettings}
                 onBack={() => setCurrentView("chat")}
               />
@@ -179,7 +180,7 @@ export default function App() {
                     chatPending={app.chatPending}
                     streamingStep={app.streamingStep}
                     streamingSteps={app.streamingSteps}
-                    ollamaReady={app.ollamaReady}
+                    ollamaSendReady={app.ollamaSendReady}
                     onFooterHeightChange={setChatFooterInset}
                   />
                 )}

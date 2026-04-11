@@ -1,7 +1,9 @@
 import express from "express";
 import cors from "cors";
 import crypto from "crypto";
-import ollama from "ollama";
+import { Ollama } from "ollama";
+import { getOllamaClient, invalidateOllamaClientCache, getResolvedOllamaHost } from "./ollamaClient";
+import { getOllamaHost, setOllamaHost } from "./db/index";
 import type { HistoryWireStep } from "./session/AgentSession";
 import { AgentSession } from "./session/AgentSession";
 import {
@@ -54,7 +56,7 @@ app.get("/api/agent/system-prompt", (req, res) => {
 
 app.get("/api/ollama/health", async (_req, res) => {
   try {
-    await ollama.list();
+    await getOllamaClient().list();
     res.json({ connected: true });
   } catch (e) {
     res.json({
@@ -64,9 +66,57 @@ app.get("/api/ollama/health", async (_req, res) => {
   }
 });
 
+app.get("/api/ollama/config", (_req, res) => {
+  res.json({
+    host: getOllamaHost(),
+    effectiveHost: getResolvedOllamaHost(),
+  });
+});
+
+app.put("/api/ollama/config", (req, res) => {
+  const body = req.body as { host?: unknown };
+  const host = typeof body.host === "string" ? body.host.trim() : "";
+  setOllamaHost(host);
+  invalidateOllamaClientCache();
+  res.json({
+    host: getOllamaHost(),
+    effectiveHost: getResolvedOllamaHost(),
+  });
+});
+
+app.post("/api/ollama/test", async (req, res) => {
+  const body = req.body as { host?: unknown };
+  const raw = typeof body.host === "string" ? body.host.trim() : "";
+  let client: Ollama;
+  try {
+    client = raw ? new Ollama({ host: raw }) : new Ollama();
+  } catch (e) {
+    res.json({
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return;
+  }
+  const effectiveHost = (client as unknown as { config: { host: string } }).config.host;
+  try {
+    const v = await client.version();
+    res.json({
+      ok: true,
+      version: v.version,
+      effectiveHost,
+    });
+  } catch (e) {
+    res.json({
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+      effectiveHost,
+    });
+  }
+});
+
 app.get("/api/models", async (_req, res) => {
   try {
-    const { models } = await ollama.list();
+    const { models } = await getOllamaClient().list();
     res.json({
       defaultModel: DEFAULT_CHAT_MODEL,
       models: models.map((m) => ({

@@ -64,6 +64,8 @@ export function useChatApp() {
   const [ollamaConnected, setOllamaConnected] = useState<boolean | null>(null);
   const [isEphemeral, setIsEphemeral] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings>(() => loadUserSettings());
+  /** Server-stored Ollama base URL; empty string means default (http://127.0.0.1:11434). */
+  const [ollamaHost, setOllamaHost] = useState("");
   const userSettingsRef = useRef(userSettings);
   userSettingsRef.current = userSettings;
   const isEphemeralRef = useRef(false);
@@ -100,40 +102,53 @@ export function useChatApp() {
   }, [fetchOllamaHealth]);
 
   const ollamaReady = ollamaConnected === true;
+  const ollamaSendReady = ollamaReady && ollamaModels.length > 0;
   const ollamaDisconnected = ollamaConnected === false;
+
+  const refreshOllamaModels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/models");
+      const data = (await res.json()) as {
+        models?: unknown;
+        defaultModel?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setModelsLoadError(typeof data.error === "string" ? data.error : res.statusText);
+        setOllamaModels([]);
+        return;
+      }
+      setModelsLoadError(null);
+      const raw = Array.isArray(data.models) ? data.models : [];
+      const list: OllamaModelOption[] = raw
+        .filter((m): m is Record<string, unknown> => m != null && typeof m === "object")
+        .map((m) => m.name)
+        .filter((n): n is string => typeof n === "string" && n.length > 0)
+        .map((name) => ({ name }));
+      setOllamaModels(list);
+      if (typeof data.defaultModel === "string" && data.defaultModel.trim()) {
+        setServerDefaultModel(data.defaultModel.trim());
+      }
+    } catch (e) {
+      setModelsLoadError(e instanceof Error ? e.message : String(e));
+      setOllamaModels([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOllamaModels();
+  }, [refreshOllamaModels]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/models");
-        const data = (await res.json()) as {
-          models?: unknown;
-          defaultModel?: string;
-          error?: string;
-        };
+        const res = await fetch("/api/ollama/config");
+        const data = (await res.json().catch(() => ({}))) as { host?: string };
         if (cancelled) return;
-        if (!res.ok) {
-          setModelsLoadError(typeof data.error === "string" ? data.error : res.statusText);
-          setOllamaModels([]);
-          return;
-        }
-        setModelsLoadError(null);
-        const raw = Array.isArray(data.models) ? data.models : [];
-        const list: OllamaModelOption[] = raw
-          .filter((m): m is Record<string, unknown> => m != null && typeof m === "object")
-          .map((m) => m.name)
-          .filter((n): n is string => typeof n === "string" && n.length > 0)
-          .map((name) => ({ name }));
-        setOllamaModels(list);
-        if (typeof data.defaultModel === "string" && data.defaultModel.trim()) {
-          setServerDefaultModel(data.defaultModel.trim());
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setModelsLoadError(e instanceof Error ? e.message : String(e));
-          setOllamaModels([]);
-        }
+        if (typeof data.host === "string") setOllamaHost(data.host);
+      } catch {
+        /* ignore */
       }
     })();
     return () => {
@@ -403,7 +418,7 @@ export function useChatApp() {
     ) => {
       const sid = activeSessionIdRef.current;
       if (!messageText.trim() || !sid) return;
-      if (!ollamaReady) return;
+      if (!ollamaSendReady) return;
 
       const msg = messageText.trim();
       const ephemeral = isEphemeralRef.current;
@@ -584,7 +599,7 @@ export function useChatApp() {
         setChatPending(false);
       }
     },
-    [fetchDebugData, ollamaReady, refreshSessions, selectedModel],
+    [fetchDebugData, ollamaSendReady, refreshSessions, selectedModel],
   );
 
   const stopGeneration = useCallback(() => {
@@ -630,11 +645,11 @@ export function useChatApp() {
       if (e) e.preventDefault();
       if (!input.trim() || !activeSessionId) return;
       const msg = input.trim();
-      if (!ollamaReady) return;
+      if (!ollamaSendReady) return;
       setInput("");
       await runChatTurn(messages, msg, { rebuildModelMessages: false });
     },
-    [activeSessionId, input, messages, ollamaReady, runChatTurn],
+    [activeSessionId, input, messages, ollamaSendReady, runChatTurn],
   );
 
   const confirmTruncateAndRetry = useCallback(async () => {
@@ -758,10 +773,23 @@ export function useChatApp() {
   const sidebarCols = sidebarCollapsed ? "72px minmax(0, 1fr)" : "260px minmax(0, 1fr)";
 
 
-  const saveUserSettings = useCallback(async (settings: UserSettings) => {
-    const updated = updateUserSettings(settings);
-    setUserSettings(updated);
-  }, []);
+  const saveUserSettings = useCallback(
+    async (settings: UserSettings, ollamaHostToSave: string) => {
+      const updated = updateUserSettings(settings);
+      setUserSettings(updated);
+      const res = await fetch("/api/ollama/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: ollamaHostToSave }),
+      });
+      if (!res.ok) throw new Error("Failed to save Ollama URL");
+      const data = (await res.json()) as { host?: string };
+      if (typeof data.host === "string") setOllamaHost(data.host);
+      void fetchOllamaHealth();
+      void refreshOllamaModels();
+    },
+    [fetchOllamaHealth, refreshOllamaModels],
+  );
 
   return {
     sessions,
@@ -802,9 +830,11 @@ export function useChatApp() {
     ollamaConnected,
     ollamaDisconnected,
     ollamaReady,
+    ollamaSendReady,
     handleModelChange,
     isEphemeral,
     userSettings,
+    ollamaHost,
     saveUserSettings,
     switchToSession,
     createSession,

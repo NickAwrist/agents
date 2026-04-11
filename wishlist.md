@@ -1,5 +1,4 @@
 Priority
-- Custom ollama backend uri
 - Idk if one exists but a fallback for if no models in ollama are found
 
 Really want

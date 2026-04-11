@@ -11,7 +11,7 @@ export function ChatInputDock({
   chatPending,
   streamingStep,
   streamingSteps,
-  ollamaReady,
+  ollamaSendReady,
   onFooterHeightChange,
 }: {
   input: string;
@@ -21,13 +21,13 @@ export function ChatInputDock({
   chatPending: boolean;
   streamingStep: MessageStep | null;
   streamingSteps: MessageStep[];
-  ollamaReady: boolean;
+  ollamaSendReady: boolean;
   onFooterHeightChange: (heightPx: number) => void;
 }) {
   const footerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
-  const canSend = ollamaReady && !isBusy;
+  const canSend = ollamaSendReady && !isBusy;
 
   const syncInputHeight = useCallback(() => {
     const el = inputRef.current;

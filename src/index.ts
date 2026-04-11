@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { agentManager } from "./agents/agentManager";
 import { RunContext } from "./RunContext";
 import { buildRunViewerHtml } from "./runViewerHtml";
-import ollama from "ollama";
+import { getOllamaClient } from "./ollamaClient";
 
 const EXIT_COMMANDS = new Set(["/bye", "/quit", "/exit"]);
 const PROMPT = "\n[You]: ";
@@ -14,7 +14,7 @@ const RUNS_DIR = path.join(PROJECT_ROOT, "logs", "runs");
 
 async function main(): Promise<void> {
   try {
-    const ollamaVersion = await ollama.version();
+    const ollamaVersion = await getOllamaClient().version();
     console.log("Powered by ollama v" + ollamaVersion.version)
   } catch (e) {
     console.error("Ollama is unreachable. Is it running?");

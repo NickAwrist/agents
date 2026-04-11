@@ -2,46 +2,64 @@ import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Save } from "lucide-react";
 import { cx, eyebrowText, primaryButton } from "../styles";
 import type { OllamaModelOption } from "../types";
-
-interface UserSettings {
-  name: string;
-  preferredFormats: string;
-  location: string;
-  defaultModel: string;
-}
-
-const DEFAULT_SETTINGS: UserSettings = {
-  name: "",
-  preferredFormats: "",
-  location: "",
-  defaultModel: "",
-};
+import type { UserSettings } from "../persist/userSettings";
 
 export function SettingsPage({
   ollamaModels,
   currentSettings,
+  ollamaHost,
   onSave,
   onBack,
 }: {
   ollamaModels: OllamaModelOption[];
   currentSettings: UserSettings;
-  onSave: (settings: UserSettings) => Promise<void>;
+  ollamaHost: string;
+  onSave: (settings: UserSettings, ollamaHost: string) => Promise<void>;
   onBack: () => void;
 }) {
   const [settings, setSettings] = useState<UserSettings>(currentSettings);
+  const [ollamaUri, setOllamaUri] = useState(ollamaHost);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testState, setTestState] = useState<
+    { status: "idle" } | { status: "loading" } | { status: "ok"; version: string } | { status: "err"; message: string }
+  >({ status: "idle" });
 
   useEffect(() => {
     setSettings(currentSettings);
   }, [currentSettings]);
 
-  const handleChange = useCallback(
-    (field: keyof UserSettings, value: string) => {
-      setSettings((prev) => ({ ...prev, [field]: value }));
-    },
-    []
-  );
+  useEffect(() => {
+    setOllamaUri(ollamaHost);
+  }, [ollamaHost]);
+
+  const handleChange = useCallback((field: keyof UserSettings, value: string) => {
+    setSettings((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
+  const handleTestOllama = useCallback(async () => {
+    setTestState({ status: "loading" });
+    setError(null);
+    try {
+      const res = await fetch("/api/ollama/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: ollamaUri }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        version?: string;
+        error?: string;
+      };
+      if (data.ok && typeof data.version === "string") {
+        setTestState({ status: "ok", version: data.version });
+      } else {
+        setTestState({ status: "err", message: data.error || "Connection failed" });
+      }
+    } catch (e) {
+      setTestState({ status: "err", message: e instanceof Error ? e.message : String(e) });
+    }
+  }, [ollamaUri]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -49,14 +67,15 @@ export function SettingsPage({
       setIsSaving(true);
       setError(null);
       try {
-        await onSave(settings);
+        await onSave(settings, ollamaUri);
+        setTestState({ status: "idle" });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to save settings");
       } finally {
         setIsSaving(false);
       }
     },
-    [settings, onSave]
+    [settings, ollamaUri, onSave]
   );
 
   const availableModels = ollamaModels.map((m) => m.name);
@@ -88,7 +107,7 @@ export function SettingsPage({
           <div className="space-y-4">
             <div>
               <h2 className={cx(eyebrowText, "mb-4")}>Personal Information</h2>
-              
+
               {/* Name Field */}
               <div className="space-y-2">
                 <label
@@ -157,8 +176,57 @@ export function SettingsPage({
                   Specify how you prefer responses to be formatted.
                 </p>
               </div>
+            </div>
 
-              {/* Default Model Selection */}
+            <hr className="border-border-subtle" />
+
+            <div className="space-y-4">
+              <h2 className={cx(eyebrowText, "mb-4")}>Ollama</h2>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="ollamaUri"
+                  className="block text-[0.875rem] font-medium text-foreground"
+                >
+                  Server URL
+                </label>
+                <div className="flex flex-wrap items-stretch gap-2 sm:flex-nowrap">
+                  <input
+                    type="text"
+                    id="ollamaUri"
+                    name="ollamaUri"
+                    value={ollamaUri}
+                    onChange={(e) => {
+                      setOllamaUri(e.target.value);
+                      setTestState({ status: "idle" });
+                    }}
+                    placeholder="http://127.0.0.1:11434"
+                    autoComplete="off"
+                    className="min-h-10 min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-[0.875rem] text-foreground placeholder:text-muted-foreground transition-colors focus:border-border focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleTestOllama()}
+                    disabled={testState.status === "loading"}
+                    className="shrink-0 rounded-lg border border-border-subtle bg-muted/40 px-3 py-2 text-[0.875rem] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                  >
+                    {testState.status === "loading" ? "Testing…" : "Test connection"}
+                  </button>
+                </div>
+                <p className="text-[0.75rem] text-muted-foreground">
+                  Leave empty to use the default local Ollama address (http://127.0.0.1:11434). Use another host or
+                  port if Ollama runs elsewhere.
+                </p>
+                {testState.status === "ok" && (
+                  <p className="text-[0.75rem] text-emerald-500/90">
+                    Connected — Ollama version {testState.version}
+                  </p>
+                )}
+                {testState.status === "err" && (
+                  <p className="text-[0.75rem] text-red-400">{testState.message}</p>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <label
                   htmlFor="defaultModel"

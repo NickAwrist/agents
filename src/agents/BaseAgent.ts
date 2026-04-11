@@ -1,6 +1,7 @@
 import type { RunContext } from "../RunContext";
 import type { BaseTool } from "../tools/BaseTool";
-import ollama, { type ChatResponse, type ToolCall } from "ollama";
+import type { ToolCall } from "ollama";
+import { getOllamaClient } from "../ollamaClient";
 import { Plan } from "../Plan";
 
 export class BaseAgent {
@@ -120,7 +121,7 @@ export class BaseAgent {
       fullThinking = "";
       toolCalls = [];
 
-      const stream = await ollama.chat({
+      const stream = await getOllamaClient().chat({
         model: this.model,
         messages,
         tools: this.tools.map((tool) => tool.toTool()),
