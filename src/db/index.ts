@@ -7,6 +7,10 @@ const DB_PATH = join(process.cwd(), "data", "agents.db");
 
 const DEFAULT_CHAT_AGENT_KEY = "default_chat_agent";
 const OLLAMA_HOST_KEY = "ollama_host";
+const COMFYUI_HOST_KEY = "comfyui_host";
+const COMFYUI_DEFAULT_MODEL_KEY = "comfyui_default_model";
+const COMFYUI_DEFAULT_WIDTH_KEY = "comfyui_default_width";
+const COMFYUI_DEFAULT_HEIGHT_KEY = "comfyui_default_height";
 
 function migrateSessionsAgentColumn(db: Database) {
   const cols = db.query("PRAGMA table_info(sessions)").all() as { name: string }[];
@@ -236,6 +240,51 @@ export function setOllamaHost(host: string): void {
     `INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     [OLLAMA_HOST_KEY, host.trim()],
   );
+}
+
+// ---------------------------------------------------------------------------
+// ComfyUI settings
+// ---------------------------------------------------------------------------
+
+function getAppSetting(key: string): string {
+  const row = getDb()
+    .query("SELECT value FROM app_settings WHERE key = ?")
+    .get(key) as { value: string } | null;
+  return row?.value?.trim() ?? "";
+}
+
+function setAppSetting(key: string, value: string): void {
+  getDb().run(
+    `INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value.trim()],
+  );
+}
+
+export function getComfyUIHost(): string {
+  return getAppSetting(COMFYUI_HOST_KEY);
+}
+
+export function setComfyUIHost(host: string): void {
+  setAppSetting(COMFYUI_HOST_KEY, host);
+}
+
+export function getComfyUIDefaultModel(): string {
+  return getAppSetting(COMFYUI_DEFAULT_MODEL_KEY);
+}
+
+export function setComfyUIDefaultModel(model: string): void {
+  setAppSetting(COMFYUI_DEFAULT_MODEL_KEY, model);
+}
+
+export function getComfyUIImageSize(): { width: number; height: number } {
+  const w = parseInt(getAppSetting(COMFYUI_DEFAULT_WIDTH_KEY), 10);
+  const h = parseInt(getAppSetting(COMFYUI_DEFAULT_HEIGHT_KEY), 10);
+  return { width: w > 0 ? w : 1440, height: h > 0 ? h : 1440 };
+}
+
+export function setComfyUIImageSize(width: number, height: number): void {
+  setAppSetting(COMFYUI_DEFAULT_WIDTH_KEY, String(width));
+  setAppSetting(COMFYUI_DEFAULT_HEIGHT_KEY, String(height));
 }
 
 export function resolveSessionAgentName(row: SessionRow | null): string {

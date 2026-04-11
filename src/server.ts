@@ -21,6 +21,7 @@ import {
   type WireMessage,
 } from "./db/index";
 import agentRoutes from "./routes/agents";
+import comfyuiRoutes from "./routes/comfyui";
 import { formatPersonalizationBlock } from "./personalization";
 
 const DEFAULT_CHAT_MODEL = "gemma4:e4b";
@@ -33,6 +34,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(agentRoutes);
+app.use("/api/comfyui", comfyuiRoutes);
 
 function writeSse(res: express.Response, payload: Record<string, unknown>) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);

@@ -101,6 +101,11 @@ export default function App() {
                 ollamaModels={app.ollamaModels}
                 currentSettings={app.userSettings}
                 ollamaHost={app.ollamaHost}
+                comfyuiHost={app.comfyuiHost}
+                comfyuiConnected={app.comfyuiConnected}
+                comfyuiDefaultModel={app.comfyuiDefaultModel}
+                comfyuiDefaultWidth={app.comfyuiDefaultWidth}
+                comfyuiDefaultHeight={app.comfyuiDefaultHeight}
                 onSave={app.saveUserSettings}
                 onBack={() => setCurrentView("chat")}
               />

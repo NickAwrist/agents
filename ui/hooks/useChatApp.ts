@@ -66,6 +66,11 @@ export function useChatApp() {
   const [userSettings, setUserSettings] = useState<UserSettings>(() => loadUserSettings());
   /** Server-stored Ollama base URL; empty string means default (http://127.0.0.1:11434). */
   const [ollamaHost, setOllamaHost] = useState("");
+  const [comfyuiHost, setComfyuiHost] = useState("");
+  const [comfyuiConnected, setComfyuiConnected] = useState<boolean | null>(null);
+  const [comfyuiDefaultModel, setComfyuiDefaultModel] = useState("");
+  const [comfyuiDefaultWidth, setComfyuiDefaultWidth] = useState(1440);
+  const [comfyuiDefaultHeight, setComfyuiDefaultHeight] = useState(1440);
   const userSettingsRef = useRef(userSettings);
   userSettingsRef.current = userSettings;
   const isEphemeralRef = useRef(false);
@@ -155,6 +160,42 @@ export function useChatApp() {
       cancelled = true;
     };
   }, []);
+
+  const fetchComfyUIHealth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/comfyui/health");
+      const data = (await res.json().catch(() => ({}))) as { connected?: boolean };
+      setComfyuiConnected(data.connected === true);
+    } catch {
+      setComfyuiConnected(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/comfyui/config");
+        const data = (await res.json().catch(() => ({}))) as {
+          host?: string;
+          defaultModel?: string;
+          defaultWidth?: number;
+          defaultHeight?: number;
+        };
+        if (cancelled) return;
+        if (typeof data.host === "string") setComfyuiHost(data.host);
+        if (typeof data.defaultModel === "string") setComfyuiDefaultModel(data.defaultModel);
+        if (typeof data.defaultWidth === "number") setComfyuiDefaultWidth(data.defaultWidth);
+        if (typeof data.defaultHeight === "number") setComfyuiDefaultHeight(data.defaultHeight);
+      } catch {
+        /* ignore */
+      }
+      void fetchComfyUIHealth();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchComfyUIHealth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -774,7 +815,11 @@ export function useChatApp() {
 
 
   const saveUserSettings = useCallback(
-    async (settings: UserSettings, ollamaHostToSave: string) => {
+    async (
+      settings: UserSettings,
+      ollamaHostToSave: string,
+      comfyui?: { host: string; defaultModel: string; defaultWidth: number; defaultHeight: number },
+    ) => {
       const updated = updateUserSettings(settings);
       setUserSettings(updated);
       const res = await fetch("/api/ollama/config", {
@@ -787,8 +832,29 @@ export function useChatApp() {
       if (typeof data.host === "string") setOllamaHost(data.host);
       void fetchOllamaHealth();
       void refreshOllamaModels();
+
+      if (comfyui) {
+        const cRes = await fetch("/api/comfyui/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(comfyui),
+        });
+        if (cRes.ok) {
+          const cData = (await cRes.json()) as {
+            host?: string;
+            defaultModel?: string;
+            defaultWidth?: number;
+            defaultHeight?: number;
+          };
+          if (typeof cData.host === "string") setComfyuiHost(cData.host);
+          if (typeof cData.defaultModel === "string") setComfyuiDefaultModel(cData.defaultModel);
+          if (typeof cData.defaultWidth === "number") setComfyuiDefaultWidth(cData.defaultWidth);
+          if (typeof cData.defaultHeight === "number") setComfyuiDefaultHeight(cData.defaultHeight);
+        }
+        void fetchComfyUIHealth();
+      }
     },
-    [fetchOllamaHealth, refreshOllamaModels],
+    [fetchOllamaHealth, refreshOllamaModels, fetchComfyUIHealth],
   );
 
   return {
@@ -835,6 +901,11 @@ export function useChatApp() {
     isEphemeral,
     userSettings,
     ollamaHost,
+    comfyuiHost,
+    comfyuiConnected,
+    comfyuiDefaultModel,
+    comfyuiDefaultWidth,
+    comfyuiDefaultHeight,
     saveUserSettings,
     switchToSession,
     createSession,

@@ -8,6 +8,7 @@ import { ReadFileTool } from "../tools/read_file";
 import { RunTscTool } from "../tools/run_tsc";
 import { WebSearchTool } from "../tools/web_search";
 import { BashTool } from "../tools/bash";
+import { GenerateImageTool } from "../tools/generate_image";
 import type { BaseTool } from '../tools/BaseTool';
 import type { RunContext } from '../RunContext';
 import { AgentTool } from '../tools/AgentTool';
@@ -23,6 +24,7 @@ export const BUILTIN_TOOLS = [
   "run_tsc",
   "web_search",
   "bash",
+  "generate_image",
 ] as const;
 
 export const agentManager = {
@@ -74,6 +76,7 @@ export const agentManager = {
       case 'run_tsc': return new RunTscTool();
       case 'web_search': return new WebSearchTool();
       case 'bash': return new BashTool();
+      case 'generate_image': return new GenerateImageTool();
       default: throw new Error(`Unknown tool: ${toolName}`);
     }
   }
