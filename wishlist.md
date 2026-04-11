@@ -3,7 +3,6 @@ Priority
 - Idk if one exists but a fallback for if no models in ollama are found
 
 Really want
-- Customizable and configurable aghents from the UI
 - MCPs
 - Ability to change workspace/root directory
 - Projects section that share a modified system prompt
