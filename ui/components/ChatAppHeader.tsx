@@ -1,4 +1,5 @@
-import { Bug, EyeOff, PanelLeft, X } from "lucide-react";
+import { useState } from "react";
+import { Bug, Check, Copy, EyeOff, PanelLeft, X } from "lucide-react";
 import { ModelSelectBar } from "./ModelSelectBar";
 import { AgentSelectBar } from "./AgentSelectBar";
 import { cx, iconButton } from "../styles";
@@ -18,6 +19,8 @@ type ChatAppHeaderProps = {
   headerChatBusy: boolean;
   debugOpen: boolean;
   onToggleDebug: () => void;
+  /** Copy full transcript (USER/MODEL blocks); return whether clipboard write succeeded. */
+  onCopyEntireChat?: () => Promise<boolean>;
   isEphemeral?: boolean;
 };
 
@@ -35,8 +38,20 @@ export function ChatAppHeader({
   headerChatBusy,
   debugOpen,
   onToggleDebug,
+  onCopyEntireChat,
   isEphemeral,
 }: ChatAppHeaderProps) {
+  const [chatCopied, setChatCopied] = useState(false);
+
+  const handleCopyChat = async () => {
+    if (!onCopyEntireChat) return;
+    const ok = await onCopyEntireChat();
+    if (ok) {
+      setChatCopied(true);
+      window.setTimeout(() => setChatCopied(false), 1500);
+    }
+  };
+
   return (
     <div
       className={cx(
@@ -80,7 +95,18 @@ export function ChatAppHeader({
           </div>
         )}
       </div>
-      <div className="pointer-events-auto flex shrink-0 items-center">
+      <div className="pointer-events-auto flex shrink-0 items-center gap-1">
+        {activeSessionId && onCopyEntireChat && (
+          <button
+            type="button"
+            onClick={() => void handleCopyChat()}
+            className={cx(iconButton)}
+            title={chatCopied ? "Copied" : "Copy entire chat"}
+            aria-label={chatCopied ? "Copied" : "Copy entire chat"}
+          >
+            {chatCopied ? <Check size={18} /> : <Copy size={18} />}
+          </button>
+        )}
         {activeSessionId && (
           <button
             type="button"

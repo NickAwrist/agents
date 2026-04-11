@@ -17,11 +17,12 @@ type EditorState = {
   name: string;
   description: string;
   system_prompt: string;
+  include_personalization: number;
   tools: string[];
 };
 
 function emptyEditor(): EditorState {
-  return { name: "", description: "", system_prompt: "", tools: [] };
+  return { name: "", description: "", system_prompt: "", include_personalization: 1, tools: [] };
 }
 
 function editorFromAgent(a: AgentData): EditorState {
@@ -29,6 +30,7 @@ function editorFromAgent(a: AgentData): EditorState {
     name: a.name,
     description: a.description,
     system_prompt: a.system_prompt,
+    include_personalization: a.include_personalization,
     tools: [...a.tools],
   };
 }
@@ -364,6 +366,23 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
                     className="rounded-lg border border-border-subtle bg-background px-3 py-2.5 text-[0.8125rem] leading-[1.6] text-foreground outline-none transition-colors focus:border-border placeholder:text-muted-foreground/50"
                     style={{ resize: "vertical" }}
                   />
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border-subtle bg-muted/15 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 shrink-0 rounded border-border-subtle accent-accent"
+                    checked={editor.include_personalization !== 0}
+                    onChange={(e) =>
+                      setEditor((p) => ({ ...p, include_personalization: e.target.checked ? 1 : 0 }))
+                    }
+                  />
+                  <span className="text-[0.8125rem] leading-snug text-foreground">
+                    <span className="font-medium">Include personalization</span>
+                    <span className="mt-0.5 block text-[0.75rem] font-normal text-muted-foreground">
+                      When enabled, this chat agent receives your name, location, and preferred response format from Settings (not subagents).
+                    </span>
+                  </span>
                 </label>
 
                 {/* Tools */}

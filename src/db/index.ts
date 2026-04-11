@@ -14,6 +14,13 @@ function migrateSessionsAgentColumn(db: Database) {
   }
 }
 
+function migrateAgentsIncludePersonalizationColumn(db: Database) {
+  const cols = db.query("PRAGMA table_info(agents)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "include_personalization")) {
+    db.run("ALTER TABLE agents ADD COLUMN include_personalization INTEGER NOT NULL DEFAULT 1");
+  }
+}
+
 function ensureDefaultChatAgentSetting(db: Database) {
   db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)", [
     DEFAULT_CHAT_AGENT_KEY,
@@ -98,6 +105,7 @@ export function getDb(): Database {
   `);
 
   migrateSessionsAgentColumn(db);
+  migrateAgentsIncludePersonalizationColumn(db);
   seedDefaultAgents(db);
   ensureDefaultChatAgentSetting(db);
 
@@ -328,6 +336,7 @@ export type AgentRow = {
   name: string;
   description: string;
   system_prompt: string;
+  include_personalization: number;
   is_default: number;
   created_at: number;
   updated_at: number;
@@ -373,7 +382,7 @@ function seedDefaultAgents(db: Database) {
 
   const now = Date.now();
   const insertAgent = db.prepare(
-    "INSERT INTO agents (id, name, description, system_prompt, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+    "INSERT INTO agents (id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, ?, ?)",
   );
   const insertTool = db.prepare(
     "INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)",
@@ -392,7 +401,9 @@ function seedDefaultAgents(db: Database) {
 export function listAgents(): AgentWithTools[] {
   const db = getDb();
   const rows = db
-    .query("SELECT id, name, description, system_prompt, is_default, created_at, updated_at FROM agents ORDER BY created_at ASC")
+    .query(
+      "SELECT id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at FROM agents ORDER BY created_at ASC",
+    )
     .all() as AgentRow[];
   const toolStmt = db.query(
     "SELECT tool_name FROM agent_tools WHERE agent_id = ? ORDER BY position ASC",
@@ -406,7 +417,9 @@ export function listAgents(): AgentWithTools[] {
 export function getAgentById(id: string): AgentWithTools | null {
   const db = getDb();
   const row = db
-    .query("SELECT id, name, description, system_prompt, is_default, created_at, updated_at FROM agents WHERE id = ?")
+    .query(
+      "SELECT id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at FROM agents WHERE id = ?",
+    )
     .get(id) as AgentRow | null;
   if (!row) return null;
   const tools = (
@@ -418,7 +431,9 @@ export function getAgentById(id: string): AgentWithTools | null {
 export function getAgentByName(name: string): AgentWithTools | null {
   const db = getDb();
   const row = db
-    .query("SELECT id, name, description, system_prompt, is_default, created_at, updated_at FROM agents WHERE name = ?")
+    .query(
+      "SELECT id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at FROM agents WHERE name = ?",
+    )
     .get(name) as AgentRow | null;
   if (!row) return null;
   const tools = (
@@ -428,35 +443,59 @@ export function getAgentByName(name: string): AgentWithTools | null {
 }
 
 export function createAgentRow(
-  data: { name: string; description: string; system_prompt: string; tools: string[] },
+  data: {
+    name: string;
+    description: string;
+    system_prompt: string;
+    tools: string[];
+    include_personalization: number;
+  },
 ): AgentWithTools {
   const db = getDb();
   const id = crypto.randomUUID();
   const now = Date.now();
+  const inc = data.include_personalization ? 1 : 0;
   const tx = db.transaction(() => {
     db.run(
-      "INSERT INTO agents (id, name, description, system_prompt, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
-      [id, data.name, data.description, data.system_prompt, now, now],
+      "INSERT INTO agents (id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+      [id, data.name, data.description, data.system_prompt, inc, now, now],
     );
     const ins = db.prepare("INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)");
     data.tools.forEach((t, i) => ins.run(id, t, i));
   });
   tx();
-  return { id, name: data.name, description: data.description, system_prompt: data.system_prompt, is_default: 0, created_at: now, updated_at: now, tools: data.tools };
+  return {
+    id,
+    name: data.name,
+    description: data.description,
+    system_prompt: data.system_prompt,
+    include_personalization: inc,
+    is_default: 0,
+    created_at: now,
+    updated_at: now,
+    tools: data.tools,
+  };
 }
 
 export function updateAgentRow(
   id: string,
-  data: { name: string; description: string; system_prompt: string; tools: string[] },
+  data: {
+    name: string;
+    description: string;
+    system_prompt: string;
+    tools: string[];
+    include_personalization: number;
+  },
 ): boolean {
   const db = getDb();
   const existing = getAgentById(id);
   if (!existing) return false;
   const now = Date.now();
+  const inc = data.include_personalization ? 1 : 0;
   const tx = db.transaction(() => {
     db.run(
-      "UPDATE agents SET name = ?, description = ?, system_prompt = ?, updated_at = ? WHERE id = ?",
-      [data.name, data.description, data.system_prompt, now, id],
+      "UPDATE agents SET name = ?, description = ?, system_prompt = ?, include_personalization = ?, updated_at = ? WHERE id = ?",
+      [data.name, data.description, data.system_prompt, inc, now, id],
     );
     db.run("DELETE FROM agent_tools WHERE agent_id = ?", [id]);
     const ins = db.prepare("INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)");

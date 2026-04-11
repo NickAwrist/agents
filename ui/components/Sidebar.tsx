@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, ChevronLeft, ChevronRight, EyeOff, Loader2, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bot, ChevronLeft, ChevronRight, EyeOff, Loader2, MoreVertical, Pencil, Plus, Settings, Trash2 } from "lucide-react";
 import type { SessionSummary } from "../types";
 import { cx, eyebrowText, iconButton } from "../styles";
 
@@ -15,6 +15,7 @@ export function Sidebar({
   collapsed,
   onToggleCollapsed,
   onManageAgents,
+  onSettings,
 }: {
   sessions: SessionSummary[];
   activeSessionId: string | null;
@@ -27,6 +28,7 @@ export function Sidebar({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onManageAgents: () => void;
+  onSettings: () => void;
 }) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const menuWrapRef = useRef<HTMLDivElement>(null);
@@ -206,7 +208,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="border-t border-border-subtle pt-2">
+      <div className="border-t border-border-subtle pt-2 space-y-1">
         <button
           type="button"
           onClick={onManageAgents}
@@ -214,6 +216,14 @@ export function Sidebar({
         >
           <Bot size={15} />
           {!collapsed && <span>Manage Agents</span>}
+        </button>
+        <button
+          type="button"
+          onClick={onSettings}
+          className="flex w-full items-center justify-center gap-2 rounded-lg px-2.5 py-2 text-[0.8125rem] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+        >
+          <Settings size={15} />
+          {!collapsed && <span>Settings</span>}
         </button>
       </div>
     </div>

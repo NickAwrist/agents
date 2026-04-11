@@ -15,14 +15,24 @@ export class BaseAgent {
 
   plan?: Plan;
 
-  constructor(name: string, description: string, tools?: BaseTool[], model?: string, systemPrompt?: string) {
+  constructor(
+    name: string,
+    description: string,
+    tools?: BaseTool[],
+    model?: string,
+    systemPrompt?: string,
+    personalizationBlock?: string | null,
+  ) {
     this.name = name;
     this.description = description;
 
     this.tools = tools || [];
     this.model = model || "gemma4:31b";
     const gemmaWarning = "CRITICAL INSTRUCTION: When calling tools, strictly output standard JSON. Do NOT use custom delimiters like <|\"|>. If an argument requires multiple lines (e.g. file contents or code), carefully escape your newlines with \\n, OR preferably use an array of strings if the tool provides a lines property.\n\nCRITICAL DIRECTIVE: You are an agent designed to take action. If you formulate a plan or decide on next steps, you MUST IMMEDIATELY use a tool call to execute the first step of your plan. NEVER stop your response after just outputting a plan or a thought. Your reply must almost always conclude with a tool call unless the entire task is fully completed.";
-    this.systemPrompt = systemPrompt ? systemPrompt + "\n\n" + gemmaWarning : gemmaWarning;
+    const base = typeof systemPrompt === "string" ? systemPrompt.trim() : "";
+    const p = typeof personalizationBlock === "string" ? personalizationBlock.trim() : "";
+    const core = [base, p].filter((s) => s.length > 0).join("\n\n");
+    this.systemPrompt = core ? core + "\n\n" + gemmaWarning : gemmaWarning;
 
     this.history = [];
 

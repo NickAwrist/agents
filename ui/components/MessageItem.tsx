@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Check, Copy, Pencil, RotateCcw, Send, Waypoints, X } from "lucide-react";
 import type { Message } from "../types";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { copyTextToClipboard } from "../lib/copyTextToClipboard";
 import { traceStepsForDisplay } from "./ExecutionTrace";
 import { cx } from "../styles";
 
@@ -53,12 +54,10 @@ export function MessageItem({
   const enterStyle: CSSProperties | undefined = animDelayMs > 0 ? { animationDelay: `${animDelayMs}ms` } : undefined;
 
   const copyContent = async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
+    const ok = await copyTextToClipboard(message.content);
+    if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* ignore */
     }
   };
 

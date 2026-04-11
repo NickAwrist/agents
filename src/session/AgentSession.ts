@@ -9,11 +9,14 @@ export class AgentSession extends EventEmitter {
   public history: { role: string; content: string; steps?: HistoryWireStep[] }[] = [];
   private generalAgent: any;
 
-  constructor(sessionId: string, options?: { model?: string; agentName?: string }) {
+  constructor(
+    sessionId: string,
+    options?: { model?: string; agentName?: string; personalizationBlock?: string | null },
+  ) {
     super();
     this.sessionId = sessionId;
     const agentName = options?.agentName?.trim() || "general_agent";
-    this.generalAgent = agentManager.createAgent(agentName);
+    this.generalAgent = agentManager.createAgent(agentName, options?.personalizationBlock);
     const m = options?.model?.trim();
     if (m) this.generalAgent.model = m;
   }

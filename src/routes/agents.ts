@@ -44,22 +44,26 @@ router.get("/api/agents/:id", (req, res) => {
 });
 
 router.post("/api/agents", (req, res) => {
-  const { name, description, system_prompt, tools } = req.body as {
+  const { name, description, system_prompt, tools, include_personalization } = req.body as {
     name?: string;
     description?: string;
     system_prompt?: string;
     tools?: string[];
+    include_personalization?: unknown;
   };
   if (!name?.trim()) {
     res.status(400).json({ error: "name is required" });
     return;
   }
+  const inc =
+    include_personalization === false || include_personalization === 0 ? 0 : 1;
   try {
     const agent = createAgentRow({
       name: name.trim(),
       description: description?.trim() ?? "",
       system_prompt: system_prompt?.trim() ?? "",
       tools: Array.isArray(tools) ? tools : [],
+      include_personalization: inc,
     });
     res.status(201).json(agent);
   } catch (e: any) {
@@ -72,22 +76,26 @@ router.post("/api/agents", (req, res) => {
 });
 
 router.put("/api/agents/:id", (req, res) => {
-  const { name, description, system_prompt, tools } = req.body as {
+  const { name, description, system_prompt, tools, include_personalization } = req.body as {
     name?: string;
     description?: string;
     system_prompt?: string;
     tools?: string[];
+    include_personalization?: unknown;
   };
   if (!name?.trim()) {
     res.status(400).json({ error: "name is required" });
     return;
   }
+  const inc =
+    include_personalization === false || include_personalization === 0 ? 0 : 1;
   try {
     const ok = updateAgentRow(req.params.id, {
       name: name.trim(),
       description: description?.trim() ?? "",
       system_prompt: system_prompt?.trim() ?? "",
       tools: Array.isArray(tools) ? tools : [],
+      include_personalization: inc,
     });
     if (!ok) {
       res.status(404).json({ error: "Agent not found" });

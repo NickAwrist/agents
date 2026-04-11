@@ -10,9 +10,20 @@ import {
 } from "../persist/sessions";
 import { fetchAgents, fetchDefaultChatAgent } from "../persist/agents";
 import { loadPreferredModel, savePreferredModel } from "../persist/modelPreference";
+import { loadUserSettings, updateUserSettings, type UserSettings } from "../persist/userSettings";
 import { readSseBlocks } from "../lib/readSseBlocks";
 
 const OLLAMA_HEALTH_POLL_MS = 3000;
+
+function newEphemeralSessionId(): string {
+  const c = typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    const v = ch === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 export function useChatApp() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -38,13 +49,16 @@ export function useChatApp() {
   const [chatPending, setChatPending] = useState(false);
   const [ollamaModels, setOllamaModels] = useState<OllamaModelOption[]>([]);
   const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
-  const [serverDefaultModel, setServerDefaultModel] = useState("gemma4:31b");
-  const [selectedModel, setSelectedModel] = useState(() => loadPreferredModel("gemma4:31b"));
+  const [serverDefaultModel, setServerDefaultModel] = useState("gemma4:e4b");
+  const [selectedModel, setSelectedModel] = useState(() => loadPreferredModel("gemma4:e4b"));
   const [chatAgents, setChatAgents] = useState<{ name: string }[]>([]);
   const [selectedSessionAgent, setSelectedSessionAgent] = useState("general_agent");
   const [serverDefaultChatAgent, setServerDefaultChatAgent] = useState("general_agent");
   const [ollamaConnected, setOllamaConnected] = useState<boolean | null>(null);
   const [isEphemeral, setIsEphemeral] = useState(false);
+  const [userSettings, setUserSettings] = useState<UserSettings>(() => loadUserSettings());
+  const userSettingsRef = useRef(userSettings);
+  userSettingsRef.current = userSettings;
   const isEphemeralRef = useRef(false);
   isEphemeralRef.current = isEphemeral;
   const debugOpenRef = useRef(false);
@@ -311,7 +325,7 @@ export function useChatApp() {
       try { await deleteSessionApi(curId); } catch (e) { console.error(e); }
       await refreshSessions();
     }
-    const id = crypto.randomUUID();
+    const id = newEphemeralSessionId();
     setActiveSessionId(id);
     setMessages([]);
     setStreamingStep(null);
@@ -403,11 +417,17 @@ export function useChatApp() {
       try {
         let res: Response;
         try {
+          const u = userSettingsRef.current;
           const chatBody: Record<string, unknown> = {
             message: msg,
             history: priorMessages,
             model: selectedModel,
             modelMessages: modelMessagesPayload,
+            personalization: {
+              name: u.name,
+              location: u.location,
+              preferredFormats: u.preferredFormats,
+            },
           };
           if (ephemeral) {
             chatBody.ephemeral = true;
@@ -708,6 +728,12 @@ export function useChatApp() {
   const headerChatBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
   const sidebarCols = sidebarCollapsed ? "72px minmax(0, 1fr)" : "260px minmax(0, 1fr)";
 
+
+  const saveUserSettings = useCallback(async (settings: UserSettings) => {
+    const updated = updateUserSettings(settings);
+    setUserSettings(updated);
+  }, []);
+
   return {
     sessions,
     activeSessionId,
@@ -749,6 +775,8 @@ export function useChatApp() {
     ollamaReady,
     handleModelChange,
     isEphemeral,
+    userSettings,
+    saveUserSettings,
     switchToSession,
     createSession,
     createEphemeralSession,

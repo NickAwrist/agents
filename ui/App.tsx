@@ -12,11 +12,14 @@ import { SidebarBackdrop } from "./components/SidebarBackdrop";
 import { ChatAppHeader } from "./components/ChatAppHeader";
 import { WelcomeHome } from "./components/WelcomeHome";
 import { AgentsPage } from "./components/AgentsPage";
+import { SettingsPage } from "./components/SettingsPage";
 import { cx } from "./styles";
+import { copyTextToClipboard } from "./lib/copyTextToClipboard";
+import { formatChatTranscript } from "./lib/formatChatTranscript";
 import { useChatApp } from "./hooks/useChatApp";
 import { useAppKeybinds } from "./hooks/useAppKeybinds";
 
-type AppView = "chat" | "agents";
+type AppView = "chat" | "agents" | "settings";
 
 export default function App() {
   const app = useChatApp();
@@ -79,6 +82,7 @@ export default function App() {
               collapsed={app.sidebarCollapsed}
               onToggleCollapsed={() => app.setSidebarCollapsed((value) => !value)}
               onManageAgents={() => { app.setSidebarOpen(false); setCurrentView("agents"); }}
+              onSettings={() => { app.setSidebarOpen(false); setCurrentView("settings"); }}
             />
           </aside>
 
@@ -91,6 +95,13 @@ export default function App() {
                   void app.refreshAgentDefaults();
                   setCurrentView("chat");
                 }}
+              />
+            ) : currentView === "settings" ? (
+              <SettingsPage
+                ollamaModels={app.ollamaModels}
+                currentSettings={app.userSettings}
+                onSave={app.saveUserSettings}
+                onBack={() => setCurrentView("chat")}
               />
             ) : (
               <>
@@ -108,6 +119,18 @@ export default function App() {
                   headerChatBusy={app.headerChatBusy}
                   debugOpen={app.debugOpen}
                   onToggleDebug={app.toggleDebug}
+                  onCopyEntireChat={
+                    app.activeSessionId
+                      ? async () =>
+                          copyTextToClipboard(
+                            formatChatTranscript(app.messages, {
+                              streamingAssistant: app.streamingContent.trim()
+                                ? app.streamingContent
+                                : undefined,
+                            }),
+                          )
+                      : undefined
+                  }
                   isEphemeral={app.isEphemeral}
                 />
 

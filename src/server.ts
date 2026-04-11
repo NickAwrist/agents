@@ -19,8 +19,9 @@ import {
   type WireMessage,
 } from "./db/index";
 import agentRoutes from "./routes/agents";
+import { formatPersonalizationBlock } from "./personalization";
 
-const DEFAULT_CHAT_MODEL = "gemma4:31b";
+const DEFAULT_CHAT_MODEL = "gemma4:e4b";
 
 getDb();
 
@@ -233,6 +234,7 @@ app.post("/api/chat", async (req, res) => {
     modelMessages?: Array<Record<string, unknown>> | null;
     ephemeral?: unknown;
     agentName?: unknown;
+    personalization?: unknown;
   };
   const ephemeral = body.ephemeral === true;
   const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
@@ -290,7 +292,27 @@ app.post("/api/chat", async (req, res) => {
     const sessionRow = getSessionById(sessionId);
     chatAgentName = resolveSessionAgentName(sessionRow);
   }
-  const session = new AgentSession(crypto.randomUUID(), { model, agentName: chatAgentName });
+
+  const agentRow = getAgentByName(chatAgentName);
+  let personalizationBlock: string | undefined;
+  if (agentRow && agentRow.include_personalization) {
+    const raw = body.personalization;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const o = raw as Record<string, unknown>;
+      const block = formatPersonalizationBlock({
+        name: typeof o.name === "string" ? o.name : "",
+        location: typeof o.location === "string" ? o.location : "",
+        preferredFormats: typeof o.preferredFormats === "string" ? o.preferredFormats : "",
+      });
+      if (block) personalizationBlock = block;
+    }
+  }
+
+  const session = new AgentSession(crypto.randomUUID(), {
+    model,
+    agentName: chatAgentName,
+    personalizationBlock,
+  });
   session.restoreFromPersistence({
     history: body.history as { role: string; content: string; steps?: HistoryWireStep[] }[],
     modelMessages: body.modelMessages,

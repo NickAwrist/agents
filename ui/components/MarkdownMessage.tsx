@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import ReactMarkdown, { MarkdownHooks, type Components, type ExtraProps } from "react-markdown";
 import rehypePrettyCode from "rehype-pretty-code";
+import { copyTextToClipboard } from "../lib/copyTextToClipboard";
 import { cx } from "../styles";
 
 const prettyCodeOptions = {
@@ -25,12 +26,10 @@ function MarkdownPre({ children, ...rest }: React.ComponentPropsWithoutRef<"pre"
     if (!root) return;
     const codeEl = root.querySelector("code");
     const text = codeEl?.innerText ?? root.innerText ?? "";
-    try {
-      await navigator.clipboard.writeText(text);
+    const ok = await copyTextToClipboard(text);
+    if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* ignore */
     }
   };
 

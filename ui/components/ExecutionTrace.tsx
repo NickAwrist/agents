@@ -23,6 +23,25 @@ export function traceStepsForDisplay(steps: MessageStep[]): MessageStep[] {
   return normalizeTraceSteps(steps).filter((s) => s.kind !== "complete");
 }
 
+const TRACE_RESULT_SEP = "\n\n---\n\n";
+
+/** All non-empty step `result` strings, depth-first (nested subagent runs after each step), matching the trace viewer filters. */
+export function formatTraceResultsForCopy(steps: MessageStep[]): string {
+  const out: string[] = [];
+
+  function walk(level: MessageStep[]): void {
+    for (const step of traceStepsForDisplay(level)) {
+      const r = step.result?.trim();
+      if (r) out.push(r);
+      const nested = step.childRun?.steps;
+      if (nested?.length) walk(nested);
+    }
+  }
+
+  walk(steps ?? []);
+  return out.join(TRACE_RESULT_SEP);
+}
+
 /** Steps fed into the trace modal while SSE is active. */
 export function coalesceLiveTraceSteps(
   streamingSteps: MessageStep[],

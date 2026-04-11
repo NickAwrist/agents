@@ -35,13 +35,20 @@ export const agentManager = {
     return agent;
   },
 
-  createAgent(agentName: string): BaseAgent {
+  createAgent(agentName: string, personalizationBlock?: string | null): BaseAgent {
     const config = getAgentByName(agentName);
     if (!config) {
       throw new Error(`Agent configuration for '${agentName}' not found in database`);
     }
 
-    const agent = new BaseAgent(config.name, config.description, undefined, undefined, config.system_prompt);
+    const agent = new BaseAgent(
+      config.name,
+      config.description,
+      undefined,
+      undefined,
+      config.system_prompt,
+      personalizationBlock ?? undefined,
+    );
 
     if (config.tools.length > 0) {
       const tools = config.tools.map((t: string) => this.getToolInstance(t));
