@@ -10,17 +10,19 @@ import {
 } from "../db/index";
 import { BUILTIN_TOOLS } from "../agents/agentManager";
 
-const router = Router();
+export const toolsRoutes = Router();
 
-router.get("/api/tools", (_req, res) => {
+toolsRoutes.get("/", (_req, res) => {
   res.json({ tools: [...BUILTIN_TOOLS] });
 });
 
-router.get("/api/settings/default-chat-agent", (_req, res) => {
+export const settingsRoutes = Router();
+
+settingsRoutes.get("/default-chat-agent", (_req, res) => {
   res.json({ agentName: getDefaultChatAgent() });
 });
 
-router.put("/api/settings/default-chat-agent", (req, res) => {
+settingsRoutes.put("/default-chat-agent", (req, res) => {
   const raw = (req.body as { agentName?: unknown }).agentName;
   const name = typeof raw === "string" ? raw.trim() : "";
   if (!name || !setDefaultChatAgent(name)) {
@@ -30,11 +32,13 @@ router.put("/api/settings/default-chat-agent", (req, res) => {
   res.json({ ok: true, agentName: getDefaultChatAgent() });
 });
 
-router.get("/api/agents", (_req, res) => {
+export const agentsRoutes = Router();
+
+agentsRoutes.get("/", (_req, res) => {
   res.json({ agents: listAgents() });
 });
 
-router.get("/api/agents/:id", (req, res) => {
+agentsRoutes.get("/:id", (req, res) => {
   const agent = getAgentById(req.params.id);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
@@ -43,7 +47,7 @@ router.get("/api/agents/:id", (req, res) => {
   res.json(agent);
 });
 
-router.post("/api/agents", (req, res) => {
+agentsRoutes.post("/", (req, res) => {
   const { name, description, system_prompt, tools, include_personalization } = req.body as {
     name?: string;
     description?: string;
@@ -75,7 +79,7 @@ router.post("/api/agents", (req, res) => {
   }
 });
 
-router.put("/api/agents/:id", (req, res) => {
+agentsRoutes.put("/:id", (req, res) => {
   const { name, description, system_prompt, tools, include_personalization } = req.body as {
     name?: string;
     description?: string;
@@ -111,7 +115,7 @@ router.put("/api/agents/:id", (req, res) => {
   }
 });
 
-router.delete("/api/agents/:id", (req, res) => {
+agentsRoutes.delete("/:id", (req, res) => {
   const ok = deleteAgentRow(req.params.id);
   if (!ok) {
     res.status(400).json({
@@ -121,5 +125,3 @@ router.delete("/api/agents/:id", (req, res) => {
   }
   res.json({ ok: true });
 });
-
-export default router;

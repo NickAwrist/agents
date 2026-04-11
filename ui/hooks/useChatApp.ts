@@ -440,11 +440,14 @@ export function useChatApp() {
   const fetchDebugData = useCallback(async (id: string) => {
     try {
       const agentName = selectedSessionAgentRef.current;
-      const spRes = await fetch(`/api/agent/system-prompt?${new URLSearchParams({ agentName })}`);
-      const spJson = (await spRes.json()) as { systemPrompt?: string };
+      const agentsRes = await fetch("/api/agents");
+      const agentsJson = (await agentsRes.json()) as {
+        agents?: Array<{ name: string; system_prompt: string }>;
+      };
+      const row = agentsJson.agents?.find((a) => a.name === agentName);
       const stored = await fetchSession(id);
       setDebugData({
-        systemPrompt: spJson.systemPrompt ?? "",
+        systemPrompt: row?.system_prompt ?? "",
         history: stored?.history ?? [],
         customTitle: stored?.customTitle ?? null,
         modelMessages: stored?.modelMessages,
