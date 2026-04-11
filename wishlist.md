@@ -1,6 +1,3 @@
-Priority
-- Idk if one exists but a fallback for if no models in ollama are found
-
 Really want
 - MCPs
 - Ability to change workspace/root directory
