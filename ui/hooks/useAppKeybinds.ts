@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import type { SessionSummary } from "../types";
 
 type UseAppKeybindsOptions = {
@@ -13,70 +13,71 @@ type UseAppKeybindsOptions = {
   headerChatBusy: boolean;
 };
 
+function suppress(e: KeyboardEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+}
+
 export function useAppKeybinds(opts: UseAppKeybindsOptions) {
-  const {
-    blockShortcuts,
-    sessions,
-    activeSessionId,
-    switchToSession,
-    createSession,
-    setSidebarOpen,
-    setSidebarCollapsed,
-    goToHome,
-    headerChatBusy,
-  } = opts;
+  const ref = useRef(opts);
+  ref.current = opts;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (blockShortcuts) return;
+      const o = ref.current;
+      if (o.blockShortcuts) return;
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
-
-      if (e.key === "Tab") {
-        if (sessions.length === 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-
-        if (activeSessionId == null) {
-          switchToSession(e.shiftKey ? sessions[sessions.length - 1]!.id : sessions[0]!.id);
-          return;
-        }
-
-        const idx = sessions.findIndex((s) => s.id === activeSessionId);
-        if (idx === -1) {
-          switchToSession(sessions[0]!.id);
-          return;
-        }
-
-        const delta = e.shiftKey ? 1 : -1;
-        let next = idx + delta;
-        if (next < 0) next = sessions.length - 1;
-        if (next >= sessions.length) next = 0;
-        switchToSession(sessions[next]!.id);
-        return;
-      }
 
       if (e.repeat) return;
 
       const k = e.key.toLowerCase();
 
-      if (k === "b") {
-        e.preventDefault();
-        const mobile = window.matchMedia("(max-width: 900px)").matches;
-        if (mobile) setSidebarOpen((o) => !o);
-        else setSidebarCollapsed((c) => !c);
+      // Ctrl+] next session, Ctrl+[ prev session
+      if (k === "]" || k === "[") {
+        if (o.sessions.length === 0) return;
+        suppress(e);
+
+        if (o.activeSessionId == null) {
+          o.switchToSession(
+            k === "[" ? o.sessions[o.sessions.length - 1]!.id : o.sessions[0]!.id,
+          );
+          return;
+        }
+
+        const idx = o.sessions.findIndex((s) => s.id === o.activeSessionId);
+        if (idx === -1) {
+          o.switchToSession(o.sessions[0]!.id);
+          return;
+        }
+
+        const delta = k === "[" ? -1 : 1;
+        let next = idx + delta;
+        if (next < 0) next = o.sessions.length - 1;
+        if (next >= o.sessions.length) next = 0;
+        o.switchToSession(o.sessions[next]!.id);
         return;
       }
 
-      if (k === "t" && !e.shiftKey) {
-        e.preventDefault();
-        createSession();
+      if (k === "b") {
+        suppress(e);
+        const mobile = window.matchMedia("(max-width: 900px)").matches;
+        if (mobile) o.setSidebarOpen((prev) => !prev);
+        else o.setSidebarCollapsed((prev) => !prev);
+        return;
+      }
+
+      // Ctrl+E new session
+      if (k === "e" && !e.shiftKey) {
+        suppress(e);
+        o.createSession();
         return;
       }
 
       if (k === "m" && !e.shiftKey) {
-        if (headerChatBusy || !activeSessionId) return;
-        e.preventDefault();
+        if (o.headerChatBusy || !o.activeSessionId) return;
+        suppress(e);
         queueMicrotask(() => {
           const el = document.getElementById("chat-model") as HTMLSelectElement | null;
           if (!el || el.disabled) return;
@@ -91,22 +92,12 @@ export function useAppKeybinds(opts: UseAppKeybindsOptions) {
       }
 
       if (k === "h" && e.shiftKey) {
-        e.preventDefault();
-        goToHome();
+        suppress(e);
+        o.goToHome();
       }
     };
 
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [
-    blockShortcuts,
-    sessions,
-    activeSessionId,
-    switchToSession,
-    createSession,
-    setSidebarOpen,
-    setSidebarCollapsed,
-    goToHome,
-    headerChatBusy,
-  ]);
+  }, []);
 }

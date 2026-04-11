@@ -9,11 +9,16 @@ import {
   patchSessionApi,
 } from "../persist/sessions";
 import { fetchAgents, fetchDefaultChatAgent } from "../persist/agents";
-import { loadPreferredModel, savePreferredModel } from "../persist/modelPreference";
 import { loadUserSettings, updateUserSettings, type UserSettings } from "../persist/userSettings";
 import { readSseBlocks } from "../lib/readSseBlocks";
 
 const OLLAMA_HEALTH_POLL_MS = 3000;
+
+/** Model for new chats: Settings default, else server default (not the active session's model). */
+function effectiveDefaultChatModel(settings: UserSettings, serverDefault: string): string {
+  const u = settings.defaultModel.trim();
+  return u || serverDefault;
+}
 
 function newEphemeralSessionId(): string {
   const c = typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
@@ -50,7 +55,9 @@ export function useChatApp() {
   const [ollamaModels, setOllamaModels] = useState<OllamaModelOption[]>([]);
   const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
   const [serverDefaultModel, setServerDefaultModel] = useState("gemma4:e4b");
-  const [selectedModel, setSelectedModel] = useState(() => loadPreferredModel("gemma4:e4b"));
+  const [selectedModel, setSelectedModel] = useState(() =>
+    effectiveDefaultChatModel(loadUserSettings(), "gemma4:e4b"),
+  );
   const [chatAgents, setChatAgents] = useState<{ name: string }[]>([]);
   const [selectedSessionAgent, setSelectedSessionAgent] = useState("general_agent");
   const [serverDefaultChatAgent, setServerDefaultChatAgent] = useState("general_agent");
@@ -187,7 +194,7 @@ export function useChatApp() {
     if (!activeSessionId) return;
     if (isEphemeral) {
       const names = new Set(ollamaModels.map((m) => m.name));
-      const pref = loadPreferredModel(serverDefaultModel);
+      const pref = effectiveDefaultChatModel(userSettingsRef.current, serverDefaultModel);
       let next = pref;
       if (names.size > 0 && !names.has(next)) {
         next = names.has(serverDefaultModel) ? serverDefaultModel : (ollamaModels[0]?.name ?? next);
@@ -199,7 +206,9 @@ export function useChatApp() {
     (async () => {
       const stored = await fetchSession(activeSessionId);
       if (cancelled) return;
-      const preference = stored?.model?.trim() || loadPreferredModel(serverDefaultModel);
+      const preference =
+        stored?.model?.trim() ||
+        effectiveDefaultChatModel(userSettingsRef.current, serverDefaultModel);
       const names = new Set(ollamaModels.map((m) => m.name));
       let next = preference;
       if (names.size > 0 && !names.has(next)) {
@@ -212,7 +221,14 @@ export function useChatApp() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, isEphemeral, ollamaModels, serverDefaultModel, serverDefaultChatAgent]);
+  }, [
+    activeSessionId,
+    isEphemeral,
+    ollamaModels,
+    serverDefaultModel,
+    serverDefaultChatAgent,
+    userSettings.defaultModel,
+  ]);
 
   const handleSessionAgentChange = useCallback(
     async (name: string) => {
@@ -233,7 +249,6 @@ export function useChatApp() {
   const handleModelChange = useCallback(
     async (model: string) => {
       setSelectedModel(model);
-      savePreferredModel(model);
       if (isEphemeralRef.current) return;
       const sid = activeSessionIdRef.current;
       if (sid) {
@@ -305,8 +320,15 @@ export function useChatApp() {
       } catch {
         /* use serverDefaultChatAgent / last known */
       }
+      const names = new Set(ollamaModels.map((m) => m.name));
+      let modelForNew = effectiveDefaultChatModel(userSettingsRef.current, serverDefaultModel);
+      if (names.size > 0 && !names.has(modelForNew)) {
+        modelForNew = names.has(serverDefaultModel)
+          ? serverDefaultModel
+          : (ollamaModels[0]?.name ?? modelForNew);
+      }
       const { id } = await createSessionApi({
-        model: selectedModel,
+        model: modelForNew,
         agentName: agentForNewChat,
       });
       await refreshSessions();
@@ -317,7 +339,14 @@ export function useChatApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadSession, messages.length, refreshSessions, selectedModel, serverDefaultChatAgent]);
+  }, [
+    loadSession,
+    messages.length,
+    refreshSessions,
+    ollamaModels,
+    serverDefaultModel,
+    serverDefaultChatAgent,
+  ]);
 
   const createEphemeralSession = useCallback(async () => {
     const curId = activeSessionIdRef.current;
