@@ -33,7 +33,7 @@ export function Sidebar({
   }, [menuOpenId]);
 
   return (
-    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] px-2.5 pb-3 pt-3">
+    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-x-hidden px-2.5 pb-3 pt-3">
       <div className="mb-2.5 flex items-center justify-between gap-2 px-1">
         <div className="min-w-0">
           {!collapsed && (
@@ -86,27 +86,34 @@ export function Sidebar({
           </div>
         )}
 
-        <div className="mt-1 min-h-0 overflow-y-auto border-t border-border-subtle pt-1">
-          {sessions.map((session) => (
-            <SessionListItem
-              key={session.id}
-              session={session}
-              active={session.id === activeSessionId}
-              collapsed={collapsed}
-              menuOpenId={menuOpenId}
-              setMenuOpenId={setMenuOpenId}
-              menuWrapRef={menuWrapRef}
-              onSelectSession={onSelectSession}
-              onRenameSession={onRenameSession}
-              onDeleteSession={onDeleteSession}
-            />
-          ))}
+        <div className="mt-1 min-h-0 overflow-x-hidden overflow-y-auto border-t border-border-subtle pt-1">
+          {/* Fixed width matches expanded column minus px-2.5 so titles don't reflow during width animation */}
+          <div
+            className={
+              collapsed ? undefined : "w-[calc(260px-1.25rem)] shrink-0"
+            }
+          >
+            {sessions.map((session) => (
+              <SessionListItem
+                key={session.id}
+                session={session}
+                active={session.id === activeSessionId}
+                collapsed={collapsed}
+                menuOpenId={menuOpenId}
+                setMenuOpenId={setMenuOpenId}
+                menuWrapRef={menuWrapRef}
+                onSelectSession={onSelectSession}
+                onRenameSession={onRenameSession}
+                onDeleteSession={onDeleteSession}
+              />
+            ))}
 
-          {sessions.length === 0 && (
-            <div className="mt-1 border-t border-border-subtle px-2.5 py-3 text-[0.8125rem] leading-[1.5] text-muted-foreground">
-              {!collapsed ? "No chats yet. Start one from the button above." : "Empty"}
-            </div>
-          )}
+            {sessions.length === 0 && (
+              <div className="mt-1 border-t border-border-subtle px-2.5 py-3 text-[0.8125rem] leading-[1.5] text-muted-foreground">
+                {!collapsed ? "No chats yet. Start one from the button above." : "Empty"}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
