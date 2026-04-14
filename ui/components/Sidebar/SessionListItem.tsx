@@ -1,7 +1,92 @@
 import { MoreVertical, Pencil, Trash2 } from "lucide-react";
-import type { RefObject } from "react";
+import { createPortal } from "react-dom";
+import { useLayoutEffect, useState, type RefObject } from "react";
 import type { SessionSummary } from "../../types";
 import { cx } from "../../styles";
+
+const MENU_VIEW_MARGIN = 8;
+const MENU_GAP = 4;
+
+function SessionOptionsMenuPortal({
+  menuWrapRef,
+  menuPortalRef,
+  onRename,
+  onDelete,
+}: {
+  menuWrapRef: RefObject<HTMLDivElement | null>;
+  menuPortalRef: RefObject<HTMLDivElement | null>;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const [pos, setPos] = useState<{ top: number; left: number; flipped: boolean } | null>(null);
+
+  useLayoutEffect(() => {
+    const update = () => {
+      const wrap = menuWrapRef.current;
+      const panel = menuPortalRef.current;
+      if (!wrap) return;
+      const wrapRect = wrap.getBoundingClientRect();
+      const panelHeight = panel?.offsetHeight ?? 88;
+      const panelWidth = panel?.offsetWidth ?? 140;
+      const spaceBelow = window.innerHeight - wrapRect.bottom - MENU_VIEW_MARGIN;
+      const spaceAbove = wrapRect.top - MENU_VIEW_MARGIN;
+      const flipped =
+        spaceBelow < panelHeight &&
+        (spaceAbove >= panelHeight || spaceAbove > spaceBelow);
+      let top = flipped
+        ? wrapRect.top - panelHeight - MENU_GAP
+        : wrapRect.bottom + MENU_GAP;
+      const maxTop = window.innerHeight - panelHeight - MENU_VIEW_MARGIN;
+      const minTop = MENU_VIEW_MARGIN;
+      top = Math.min(maxTop, Math.max(minTop, top));
+      const left = Math.min(
+        Math.max(MENU_VIEW_MARGIN, wrapRect.right - panelWidth),
+        window.innerWidth - panelWidth - MENU_VIEW_MARGIN,
+      );
+      setPos({ top, left, flipped });
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [menuWrapRef, menuPortalRef]);
+
+  return createPortal(
+    <div
+      ref={menuPortalRef}
+      className={cx(
+        "ui-animate-slide-up fixed z-[200] min-w-[140px] rounded-lg border border-border-subtle bg-surface p-1 shadow-[0_10px_28px_rgba(0,0,0,0.4)]",
+        pos?.flipped ? "origin-bottom-right" : "origin-top-right",
+      )}
+      style={
+        pos
+          ? { top: pos.top, left: pos.left }
+          : { visibility: "hidden", top: 0, left: 0 }
+      }
+      role="menu"
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.99] active:bg-muted/80"
+        role="menuitem"
+        onClick={onRename}
+      >
+        <Pencil size={14} />
+        Rename
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-red-400 transition-[color,background-color,transform] duration-150 ease-out hover:bg-red-400/10 hover:text-red-300 active:scale-[0.99] active:bg-red-400/15"
+        role="menuitem"
+        onClick={onDelete}
+      >
+        <Trash2 size={14} />
+        Delete
+      </button>
+    </div>,
+    document.body,
+  );
+}
 
 type Props = {
   session: SessionSummary;
@@ -10,6 +95,7 @@ type Props = {
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
   menuWrapRef: RefObject<HTMLDivElement | null>;
+  menuPortalRef: RefObject<HTMLDivElement | null>;
   onSelectSession: (id: string) => void;
   onRenameSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
@@ -22,6 +108,7 @@ export function SessionListItem({
   menuOpenId,
   setMenuOpenId,
   menuWrapRef,
+  menuPortalRef,
   onSelectSession,
   onRenameSession,
   onDeleteSession,
@@ -93,35 +180,18 @@ export function SessionListItem({
           <MoreVertical size={16} />
         </button>
         {menuOpenId === session.id && (
-          <div
-            className="ui-animate-slide-up absolute right-0 top-full z-50 mt-1 min-w-[140px] origin-top-right rounded-lg border border-border-subtle bg-surface p-1 shadow-[0_10px_28px_rgba(0,0,0,0.4)]"
-            role="menu"
-          >
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.99] active:bg-muted/80"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpenId(null);
-                onRenameSession(session.id);
-              }}
-            >
-              <Pencil size={14} />
-              Rename
-            </button>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-red-400 transition-[color,background-color,transform] duration-150 ease-out hover:bg-red-400/10 hover:text-red-300 active:scale-[0.99] active:bg-red-400/15"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpenId(null);
-                onDeleteSession(session.id);
-              }}
-            >
-              <Trash2 size={14} />
-              Delete
-            </button>
-          </div>
+          <SessionOptionsMenuPortal
+            menuWrapRef={menuWrapRef}
+            menuPortalRef={menuPortalRef}
+            onRename={() => {
+              setMenuOpenId(null);
+              onRenameSession(session.id);
+            }}
+            onDelete={() => {
+              setMenuOpenId(null);
+              onDeleteSession(session.id);
+            }}
+          />
         )}
       </div>
     </div>

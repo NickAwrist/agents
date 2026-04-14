@@ -20,12 +20,14 @@ export function Sidebar({
 }: SidebarProps) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const menuWrapRef = useRef<HTMLDivElement>(null);
+  const menuPortalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!menuOpenId) return;
     const onDoc = (e: MouseEvent) => {
       if (!(e.target instanceof Node)) return;
       if (menuWrapRef.current?.contains(e.target)) return;
+      if (menuPortalRef.current?.contains(e.target)) return;
       setMenuOpenId(null);
     };
     document.addEventListener("mousedown", onDoc);
@@ -86,7 +88,10 @@ export function Sidebar({
           </div>
         )}
 
-        <div className="mt-1 min-h-0 overflow-x-hidden overflow-y-auto border-t border-border-subtle pt-1">
+        <div
+          className="mt-1 min-h-0 overflow-x-hidden overflow-y-auto border-t border-border-subtle pt-1"
+          onScroll={() => setMenuOpenId(null)}
+        >
           {/* Fixed width matches expanded column minus px-2.5 so titles don't reflow during width animation */}
           <div
             className={
@@ -102,6 +107,7 @@ export function Sidebar({
                 menuOpenId={menuOpenId}
                 setMenuOpenId={setMenuOpenId}
                 menuWrapRef={menuWrapRef}
+                menuPortalRef={menuPortalRef}
                 onSelectSession={onSelectSession}
                 onRenameSession={onRenameSession}
                 onDeleteSession={onDeleteSession}
