@@ -26,6 +26,33 @@ import type { UserSettings } from "../../persist/userSettings";
 import type { OllamaModelOption } from "../../types";
 import { loadUserSettings } from "../../persist/userSettings";
 import { effectiveDefaultChatModel, newEphemeralSessionId } from "./sessionUtils";
+import type { ChatFlightApi } from "./useChatStreaming";
+
+const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
+const CHAT_PATH_PREFIX = "/chat/";
+
+function sessionIdFromUrl(): string | null {
+  const { pathname } = window.location;
+  if (pathname.startsWith(CHAT_PATH_PREFIX)) {
+    const id = decodeURIComponent(pathname.slice(CHAT_PATH_PREFIX.length));
+    return id || null;
+  }
+  return null;
+}
+
+function pushSessionUrl(id: string | null) {
+  const target = id ? `${CHAT_PATH_PREFIX}${encodeURIComponent(id)}` : "/";
+  if (window.location.pathname !== target) {
+    window.history.pushState({ sessionId: id }, "", target);
+  }
+}
+
+function replaceSessionUrl(id: string | null) {
+  const target = id ? `${CHAT_PATH_PREFIX}${encodeURIComponent(id)}` : "/";
+  if (window.location.pathname !== target) {
+    window.history.replaceState({ sessionId: id }, "", target);
+  }
+}
 
 type Args = {
   ollamaModels: OllamaModelOption[];
@@ -46,11 +73,12 @@ type Args = {
   activeSessionIdRef: MutableRefObject<string | null>;
   isEphemeralRef: MutableRefObject<boolean>;
   selectedSessionAgentRef: MutableRefObject<string>;
+  chatFlightRef: MutableRefObject<ChatFlightApi | null>;
 };
 
 export function useSessionsAndNavigation(p: Args) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionIdFromUrl);
   const [isEphemeral, setIsEphemeral] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -63,6 +91,7 @@ export function useSessionsAndNavigation(p: Args) {
   const [selectedSessionAgent, setSelectedSessionAgent] = useState("general_agent");
 
   const loadGenRef = useRef(0);
+  const restoreDoneRef = useRef(false);
 
   p.activeSessionIdRef.current = activeSessionId;
   p.isEphemeralRef.current = isEphemeral;
@@ -77,16 +106,6 @@ export function useSessionsAndNavigation(p: Args) {
       setSessions([]);
     }
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!cancelled) await refreshSessions();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshSessions]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -170,6 +189,24 @@ export function useSessionsAndNavigation(p: Args) {
     async (id: string) => {
       const gen = ++loadGenRef.current;
       setActiveSessionId(id);
+      const cf = p.chatFlightRef.current;
+      if (cf?.shouldPreserveMessages(id)) {
+        p.resetStreamingUi();
+        p.setMessages(cf.getTurnSnapshot() ?? []);
+        p.setEditingUserIndex(null);
+        p.setTruncateConfirm(null);
+        try {
+          const stored = await fetchSession(id);
+          if (gen !== loadGenRef.current) return;
+          p.modelMessagesRef.current = stored?.modelMessages ?? null;
+        } catch (e) {
+          if (gen !== loadGenRef.current) return;
+          console.error(e);
+        }
+        cf.hydrateStreaming();
+        return;
+      }
+
       p.setMessages([]);
       p.resetStreamingUi();
       p.setEditingUserIndex(null);
@@ -184,9 +221,67 @@ export function useSessionsAndNavigation(p: Args) {
         if (gen !== loadGenRef.current) return;
         console.error(e);
       }
+
+      try {
+        const statusRes = await fetch(`/api/chat/active/${encodeURIComponent(id)}`);
+        if (gen !== loadGenRef.current) return;
+        const status = (await statusRes.json()) as { active?: boolean; requestId?: string };
+        if (status.active && status.requestId) {
+          p.chatFlightRef.current?.reconnectToStream(id, status.requestId);
+        }
+      } catch {
+        /* no active generation — normal case */
+      }
     },
-    [p.setMessages, p.resetStreamingUi, p.setEditingUserIndex, p.setTruncateConfirm, p.modelMessagesRef],
+    [
+      p.chatFlightRef,
+      p.setMessages,
+      p.resetStreamingUi,
+      p.setEditingUserIndex,
+      p.setTruncateConfirm,
+      p.modelMessagesRef,
+    ],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        await refreshSessions();
+        if (cancelled) return;
+        const restoredId =
+          sessionIdFromUrl() || sessionStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+        if (restoredId) {
+          const stored = await fetchSession(restoredId);
+          if (cancelled) return;
+          if (stored) {
+            await loadSession(restoredId);
+            replaceSessionUrl(restoredId);
+          } else {
+            setActiveSessionId(null);
+            sessionStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+            replaceSessionUrl(null);
+          }
+        }
+      } finally {
+        if (!cancelled) restoreDoneRef.current = true;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshSessions, loadSession]);
+
+  useEffect(() => {
+    if (activeSessionId && !isEphemeral) {
+      sessionStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, activeSessionId);
+      replaceSessionUrl(activeSessionId);
+      return;
+    }
+    if (!restoreDoneRef.current) return;
+    sessionStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    replaceSessionUrl(null);
+  }, [activeSessionId, isEphemeral]);
 
   const switchToSession = useCallback(
     async (id: string) => {
@@ -201,6 +296,7 @@ export function useSessionsAndNavigation(p: Args) {
         await refreshSessions();
       }
       setIsEphemeral(false);
+      pushSessionUrl(id);
       await loadSession(id);
     },
     [loadSession, p.activeSessionIdRef, p.isEphemeralRef, p.messages.length, refreshSessions],
@@ -237,6 +333,7 @@ export function useSessionsAndNavigation(p: Args) {
         agentName: agentForNewChat,
       });
       await refreshSessions();
+      pushSessionUrl(id);
       await loadSession(id);
       setSidebarOpen(false);
     } catch (e) {
@@ -277,6 +374,7 @@ export function useSessionsAndNavigation(p: Args) {
     p.modelMessagesRef.current = null;
     setSidebarOpen(false);
     setSelectedSessionAgent(p.serverDefaultChatAgent);
+    pushSessionUrl(null);
   }, [
     p.activeSessionIdRef,
     p.isEphemeralRef,
@@ -299,6 +397,25 @@ export function useSessionsAndNavigation(p: Args) {
     return () => window.removeEventListener("keydown", onKey);
   }, [sidebarOpen]);
 
+  useEffect(() => {
+    const onPopState = () => {
+      const urlId = sessionIdFromUrl();
+      if (urlId) {
+        setIsEphemeral(false);
+        void loadSession(urlId);
+      } else {
+        setActiveSessionId(null);
+        setIsEphemeral(false);
+        p.setMessages([]);
+        p.resetStreamingUi();
+        p.setEditingUserIndex(null);
+        p.setTruncateConfirm(null);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [loadSession, p.setMessages, p.resetStreamingUi, p.setEditingUserIndex, p.setTruncateConfirm]);
+
   const goToHome = useCallback(async () => {
     const curId = p.activeSessionIdRef.current;
     if (curId && !p.isEphemeralRef.current && p.messages.length === 0) {
@@ -320,6 +437,7 @@ export function useSessionsAndNavigation(p: Args) {
     p.setDebugData(null);
     setSidebarOpen(false);
     setSelectedSessionAgent(p.serverDefaultChatAgent);
+    pushSessionUrl(null);
   }, [
     p.activeSessionIdRef,
     p.isEphemeralRef,
@@ -349,6 +467,7 @@ export function useSessionsAndNavigation(p: Args) {
         p.setDebugData(null);
         p.setEditingUserIndex(null);
         p.setTruncateConfirm(null);
+        replaceSessionUrl(null);
       }
       await refreshSessions();
     },

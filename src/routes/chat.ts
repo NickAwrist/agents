@@ -16,8 +16,47 @@ const router = Router();
 
 const activeRequests = new Map<string, AbortController>();
 
+type ActiveGeneration = {
+  requestId: string;
+  sessionId: string;
+  abortController: AbortController;
+  eventBuffer: Array<Record<string, unknown>>;
+  clients: Set<Response>;
+  orphanTimer: ReturnType<typeof setTimeout> | null;
+};
+
+const activeGenerationsBySession = new Map<string, ActiveGeneration>();
+const ORPHAN_TIMEOUT_MS = 5 * 60 * 1000;
+
 function writeSse(res: Response, payload: Record<string, unknown>) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function broadcastSse(gen: ActiveGeneration, payload: Record<string, unknown>) {
+  gen.eventBuffer.push(payload);
+  const data = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const client of gen.clients) {
+    try { client.write(data); } catch { /* client gone */ }
+  }
+}
+
+function startOrphanTimer(gen: ActiveGeneration) {
+  if (gen.orphanTimer) clearTimeout(gen.orphanTimer);
+  gen.orphanTimer = setTimeout(() => {
+    gen.abortController.abort();
+  }, ORPHAN_TIMEOUT_MS);
+}
+
+function clearOrphanTimer(gen: ActiveGeneration) {
+  if (gen.orphanTimer) {
+    clearTimeout(gen.orphanTimer);
+    gen.orphanTimer = null;
+  }
+}
+
+function removeClient(gen: ActiveGeneration, res: Response) {
+  gen.clients.delete(res);
+  if (gen.clients.size === 0) startOrphanTimer(gen);
 }
 
 router.post("/abort", (req, res) => {
@@ -28,6 +67,16 @@ router.post("/abort", (req, res) => {
   }
   activeRequests.get(requestId)!.abort();
   activeRequests.delete(requestId);
+  res.json({ aborted: true });
+});
+
+router.post("/abort-session/:sessionId", (req, res) => {
+  const gen = activeGenerationsBySession.get(req.params.sessionId);
+  if (!gen) {
+    res.json({ aborted: false });
+    return;
+  }
+  gen.abortController.abort();
   res.json({ aborted: true });
 });
 
@@ -83,10 +132,35 @@ router.post("/", async (req, res) => {
   activeRequests.set(requestId, abortController);
 
   let clientDisconnected = false;
+
+  const gen: ActiveGeneration | null = ephemeral
+    ? null
+    : {
+        requestId,
+        sessionId,
+        abortController,
+        eventBuffer: [],
+        clients: new Set([res]),
+        orphanTimer: null,
+      };
+  if (gen) {
+    const prev = activeGenerationsBySession.get(sessionId);
+    if (prev) {
+      prev.abortController.abort();
+      clearOrphanTimer(prev);
+      for (const c of prev.clients) { try { c.end(); } catch {} }
+    }
+    activeGenerationsBySession.set(sessionId, gen);
+  }
+
   res.on("close", () => {
     if (!res.writableFinished) {
       clientDisconnected = true;
-      abortController.abort();
+      if (gen) {
+        removeClient(gen, res);
+      } else {
+        abortController.abort();
+      }
     }
   });
 
@@ -125,8 +199,20 @@ router.post("/", async (req, res) => {
   });
 
   const safeSse = (payload: Record<string, unknown>) => {
-    if (!clientDisconnected) writeSse(res, payload);
+    if (gen) {
+      broadcastSse(gen, payload);
+    } else if (!clientDisconnected) {
+      writeSse(res, payload);
+    }
   };
+
+  if (!ephemeral) {
+    const pendingHistory = [
+      ...(body.history as WireMessage[]),
+      { role: "user" as const, content: message },
+    ];
+    replaceSessionMessages(sessionId, pendingHistory, body.modelMessages ?? null, Date.now(), model);
+  }
 
   safeSse({ type: "chat_started", requestId });
 
@@ -187,8 +273,56 @@ router.post("/", async (req, res) => {
     session.off("step", onStep);
     session.off("stream_delta", onStreamDelta);
     session.off("aborted", onAborted);
-    if (!clientDisconnected) res.end();
+    if (gen) {
+      clearOrphanTimer(gen);
+      activeGenerationsBySession.delete(sessionId);
+      for (const c of gen.clients) {
+        try { c.end(); } catch {}
+      }
+    } else if (!clientDisconnected) {
+      res.end();
+    }
   }
+});
+
+router.get("/active/:sessionId", (req, res) => {
+  const sid = req.params.sessionId;
+  const gen = activeGenerationsBySession.get(sid);
+  if (!gen) {
+    res.json({ active: false });
+    return;
+  }
+  res.json({ active: true, requestId: gen.requestId });
+});
+
+router.get("/stream/:sessionId", (req, res) => {
+  const sid = req.params.sessionId;
+  const gen = activeGenerationsBySession.get(sid);
+  if (!gen) {
+    res.status(404).json({ error: "No active generation for this session" });
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  for (const event of gen.eventBuffer) {
+    writeSse(res, event);
+  }
+
+  gen.clients.add(res);
+  clearOrphanTimer(gen);
+
+  const ping = setInterval(() => { res.write(`:\n\n`); }, 15000);
+
+  res.on("close", () => {
+    clearInterval(ping);
+    if (!res.writableFinished) {
+      removeClient(gen, res);
+    }
+  });
 });
 
 export default router;

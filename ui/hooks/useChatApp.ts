@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { DebugData, Message, TraceModalSelection, TruncateConfirmState } from "../types";
+import type { ChatFlightApi } from "./chat/useChatStreaming";
 import { traceStepsForModal } from "../components/ExecutionTrace";
 import { useOllamaConnection } from "./chat/useOllamaConnection";
 import { useComfyUIConnection } from "./chat/useComfyUIConnection";
@@ -19,10 +20,13 @@ export function useChatApp() {
   const modelMessagesRef = useRef<Array<Record<string, unknown>> | null>(null);
   const debugOpenRef = useRef(false);
   const resetStreamingUiRef = useRef<() => void>(() => {});
+  const chatFlightRef = useRef<ChatFlightApi | null>(null);
 
   const bindStreamingReset = useCallback((fn: () => void) => {
     resetStreamingUiRef.current = fn;
   }, []);
+
+  const resetStreamingUi = useCallback(() => resetStreamingUiRef.current(), []);
 
   const settings = useSettings(
     ollama.setOllamaHost,
@@ -55,11 +59,12 @@ export function useChatApp() {
     setStepsModalData,
     setDebugOpen,
     setDebugData,
-    resetStreamingUi: () => resetStreamingUiRef.current(),
+    resetStreamingUi,
     modelMessagesRef,
     activeSessionIdRef,
     isEphemeralRef,
     selectedSessionAgentRef,
+    chatFlightRef,
   });
 
   const stream = useChatStreaming({
@@ -87,6 +92,7 @@ export function useChatApp() {
     setEditingUserIndex,
     truncateConfirm,
     setTruncateConfirm,
+    chatFlightRef,
   });
 
   const modalSteps = traceStepsForModal(

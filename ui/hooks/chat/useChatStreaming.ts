@@ -19,6 +19,21 @@ import { fetchSession, patchSessionApi } from "../../persist/sessions";
 import type { UserSettings } from "../../persist/userSettings";
 import { readSseBlocks } from "../../lib/readSseBlocks";
 
+/** Wired from useChatApp so loadSession can restore mid-flight UI when returning to that session. */
+export type ChatFlightApi = {
+  shouldPreserveMessages: (sessionId: string) => boolean;
+  getTurnSnapshot: () => Message[] | null;
+  hydrateStreaming: () => void;
+  reconnectToStream: (sessionId: string, requestId: string) => void;
+};
+
+type StreamBuffer = {
+  content: string;
+  thinking: string;
+  step: MessageStep | null;
+  steps: MessageStep[];
+};
+
 type Args = {
   messages: Message[];
   setMessages: Dispatch<SetStateAction<Message[]>>;
@@ -44,6 +59,7 @@ type Args = {
   setEditingUserIndex: Dispatch<SetStateAction<number | null>>;
   truncateConfirm: TruncateConfirmState;
   setTruncateConfirm: Dispatch<SetStateAction<TruncateConfirmState>>;
+  chatFlightRef: MutableRefObject<ChatFlightApi | null>;
 };
 
 export function useChatStreaming(p: Args) {
@@ -56,6 +72,19 @@ export function useChatStreaming(p: Args) {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
+  /** Session id for the in-flight `/api/chat` request (persisted id or ephemeral client id). */
+  const inFlightSessionIdRef = useRef<string | null>(null);
+  const inFlightEphemeralRef = useRef(false);
+  const [inFlightSessionId, setInFlightSessionId] = useState<string | null>(null);
+  const rawChatPendingRef = useRef(false);
+  const streamBufferRef = useRef<StreamBuffer>({
+    content: "",
+    thinking: "",
+    step: null,
+    steps: [],
+  });
+  const turnMessagesSnapshotRef = useRef<Message[] | null>(null);
+  const turnRootAgentNameRef = useRef("");
 
   p.debugOpenRef.current = p.debugOpen;
 
@@ -67,6 +96,131 @@ export function useChatStreaming(p: Args) {
       setStreamingThinking("");
     });
   }, [p.bindStreamingReset]);
+
+  const reconnectToStream = useCallback(
+    (sessionId: string, requestId: string) => {
+      if (rawChatPendingRef.current) return;
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      activeRequestIdRef.current = requestId;
+      inFlightSessionIdRef.current = sessionId;
+      inFlightEphemeralRef.current = false;
+      rawChatPendingRef.current = true;
+      streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
+
+      setInFlightSessionId(sessionId);
+      setChatPending(true);
+      setStreamingStep(null);
+      setStreamingSteps([]);
+      setStreamingContent("");
+      setStreamingThinking("");
+
+      const rootAgent = p.selectedSessionAgentRef.current;
+      const viewing = () => p.activeSessionIdRef.current === sessionId;
+
+      void (async () => {
+        try {
+          const res = await fetch(`/api/chat/stream/${encodeURIComponent(sessionId)}`, {
+            signal: controller.signal,
+          });
+          if (!res.ok || !res.body) return;
+          const reader = res.body.getReader();
+          const finalizeReconnect = async () => {
+            if (viewing()) {
+              setStreamingStep(null);
+              setStreamingSteps([]);
+              setStreamingContent("");
+              setStreamingThinking("");
+            }
+            try {
+              const s = await fetchSession(sessionId);
+              if (viewing()) {
+                if (s?.history?.length) p.setMessages(s.history);
+                p.modelMessagesRef.current = s?.modelMessages ?? null;
+              }
+            } catch (e) {
+              console.error(e);
+            }
+            await p.refreshSessions();
+          };
+
+          await readSseBlocks(reader, async (data) => {
+            if (data.type === "chat_started") {
+              if (typeof data.requestId === "string") {
+                activeRequestIdRef.current = data.requestId;
+              }
+            } else if (data.type === "stream_delta") {
+              const cd = typeof data.contentDelta === "string" ? data.contentDelta : "";
+              const td = typeof data.thinkingDelta === "string" ? data.thinkingDelta : "";
+              const agent = typeof data.agentName === "string" ? data.agentName : "";
+              const buf = streamBufferRef.current;
+              if (td) buf.thinking += td;
+              if (cd && agent === rootAgent) buf.content += cd;
+              if (!viewing()) return;
+              if (cd && agent === rootAgent) setStreamingContent((prev) => prev + cd);
+              if (td) setStreamingThinking((prev) => prev + td);
+            } else if (data.type === "step") {
+              const step = data.step as MessageStep;
+              const buf = streamBufferRef.current;
+              if (step.status === "running") {
+                buf.thinking = "";
+                if (step.kind !== "complete") buf.content = "";
+              }
+              buf.step = step;
+              if (Array.isArray(data.steps)) buf.steps = data.steps as MessageStep[];
+              if (!viewing()) return;
+              if (step.status === "running") {
+                setStreamingThinking("");
+                if (step.kind !== "complete") setStreamingContent("");
+              }
+              setStreamingStep(step);
+              if (Array.isArray(data.steps)) setStreamingSteps(data.steps as MessageStep[]);
+            } else if (data.type === "chat_done" || data.type === "chat_aborted") {
+              await finalizeReconnect();
+            } else if (data.type === "error") {
+              if (viewing()) {
+                setStreamingStep(null);
+                setStreamingSteps([]);
+                setStreamingContent("");
+                setStreamingThinking("");
+              }
+            }
+          });
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          console.error("reconnect stream error", err);
+        } finally {
+          abortControllerRef.current = null;
+          activeRequestIdRef.current = null;
+          inFlightSessionIdRef.current = null;
+          inFlightEphemeralRef.current = false;
+          rawChatPendingRef.current = false;
+          streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
+          turnMessagesSnapshotRef.current = null;
+          setInFlightSessionId(null);
+          setChatPending(false);
+        }
+      })();
+    },
+    [p.activeSessionIdRef, p.modelMessagesRef, p.refreshSessions, p.selectedSessionAgentRef, p.setMessages],
+  );
+
+  useLayoutEffect(() => {
+    p.chatFlightRef.current = {
+      shouldPreserveMessages: (sessionId: string) =>
+        rawChatPendingRef.current && inFlightSessionIdRef.current === sessionId,
+      getTurnSnapshot: () => turnMessagesSnapshotRef.current,
+      hydrateStreaming: () => {
+        const b = streamBufferRef.current;
+        setStreamingContent(b.content);
+        setStreamingThinking(b.thinking);
+        setStreamingStep(b.step);
+        setStreamingSteps(Array.isArray(b.steps) ? [...b.steps] : []);
+      },
+      reconnectToStream,
+    };
+  }, [p.chatFlightRef, reconnectToStream]);
 
   const fetchDebugData = useCallback(
     async (id: string) => {
@@ -93,24 +247,35 @@ export function useChatStreaming(p: Args) {
 
   const runChatTurn = useCallback(
     async (
+      turnSessionId: string,
       priorMessages: Message[],
       messageText: string,
       options: { rebuildModelMessages: boolean },
     ) => {
-      const sid = p.activeSessionIdRef.current;
-      if (!messageText.trim() || !sid) return;
+      if (!messageText.trim() || !turnSessionId) return;
       if (!p.ollamaSendReady) return;
 
       const msg = messageText.trim();
       const ephemeral = p.isEphemeralRef.current;
+      inFlightSessionIdRef.current = turnSessionId;
+      inFlightEphemeralRef.current = ephemeral;
+      turnRootAgentNameRef.current = p.selectedSessionAgentRef.current;
+      streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
+      turnMessagesSnapshotRef.current = [...priorMessages, { role: "user" as const, content: msg }];
+      rawChatPendingRef.current = true;
+      setInFlightSessionId(turnSessionId);
       setChatPending(true);
       setStreamingStep(null);
       setStreamingSteps([]);
       setStreamingContent("");
       setStreamingThinking("");
 
+      const viewingThisTurn = () => p.activeSessionIdRef.current === turnSessionId;
+
       const nextHistory: Message[] = [...priorMessages, { role: "user" as const, content: msg }];
-      p.setMessages(nextHistory);
+      if (viewingThisTurn()) {
+        p.setMessages(nextHistory);
+      }
 
       const failWithAssistantError = async (errText: string) => {
         const failedHistory: Message[] = [
@@ -118,12 +283,23 @@ export function useChatStreaming(p: Args) {
           { role: "user", content: msg },
           { role: "assistant", content: `Error: ${errText}` },
         ];
-        p.setMessages(failedHistory);
+        if (viewingThisTurn()) {
+          p.setMessages(failedHistory);
+        }
         if (!ephemeral) {
+          let mm = options.rebuildModelMessages ? null : p.modelMessagesRef.current;
+          if (!viewingThisTurn()) {
+            try {
+              const cur = await fetchSession(turnSessionId);
+              mm = options.rebuildModelMessages ? null : cur?.modelMessages ?? null;
+            } catch {
+              mm = options.rebuildModelMessages ? null : null;
+            }
+          }
           try {
-            await patchSessionApi(sid, {
+            await patchSessionApi(turnSessionId, {
               history: failedHistory,
-              modelMessages: options.rebuildModelMessages ? null : p.modelMessagesRef.current,
+              modelMessages: mm,
             });
           } catch (e) {
             console.error(e);
@@ -158,7 +334,7 @@ export function useChatStreaming(p: Args) {
             chatBody.ephemeral = true;
             chatBody.agentName = p.selectedSessionAgentRef.current;
           } else {
-            chatBody.sessionId = sid;
+            chatBody.sessionId = turnSessionId;
           }
           res = await fetch("/api/chat", {
             method: "POST",
@@ -197,12 +373,28 @@ export function useChatStreaming(p: Args) {
               const cd = typeof data.contentDelta === "string" ? data.contentDelta : "";
               const td = typeof data.thinkingDelta === "string" ? data.thinkingDelta : "";
               const agent = typeof data.agentName === "string" ? data.agentName : "";
-              if (cd && agent === p.selectedSessionAgentRef.current) {
+              const buf = streamBufferRef.current;
+              if (td) buf.thinking += td;
+              if (cd && agent === turnRootAgentNameRef.current) {
+                buf.content += cd;
+              }
+              if (!viewingThisTurn()) return;
+              if (cd && agent === turnRootAgentNameRef.current) {
                 setStreamingContent((prev) => prev + cd);
               }
               if (td) setStreamingThinking((prev) => prev + td);
             } else if (data.type === "step") {
               const step = data.step as MessageStep;
+              const buf = streamBufferRef.current;
+              if (step.status === "running") {
+                buf.thinking = "";
+                if (step.kind !== "complete") {
+                  buf.content = "";
+                }
+              }
+              buf.step = step;
+              if (Array.isArray(data.steps)) buf.steps = data.steps as MessageStep[];
+              if (!viewingThisTurn()) return;
               if (step.status === "running") {
                 setStreamingThinking("");
                 if (step.kind !== "complete") {
@@ -212,61 +404,75 @@ export function useChatStreaming(p: Args) {
               setStreamingStep(step);
               if (Array.isArray(data.steps)) setStreamingSteps(data.steps as MessageStep[]);
             } else if (data.type === "chat_done") {
-              setStreamingStep(null);
-              setStreamingSteps([]);
-              setStreamingContent("");
-              setStreamingThinking("");
+              if (viewingThisTurn()) {
+                setStreamingStep(null);
+                setStreamingSteps([]);
+                setStreamingContent("");
+                setStreamingThinking("");
+              }
               if (ephemeral) {
                 const assistantContent = typeof data.result === "string" ? data.result : "";
                 const steps = (Array.isArray(data.steps) ? data.steps : []) as MessageStep[];
-                p.setMessages([
-                  ...priorMessages,
-                  { role: "user", content: msg },
-                  { role: "assistant", content: assistantContent, steps },
-                ]);
-                if (Array.isArray(data.modelMessages)) {
-                  p.modelMessagesRef.current = data.modelMessages as Array<Record<string, unknown>>;
-                }
-              } else {
-                try {
-                  const s = await fetchSession(sid);
-                  if (s?.history?.length) p.setMessages(s.history);
-                  p.modelMessagesRef.current = s?.modelMessages ?? null;
-                } catch (e) {
-                  console.error(e);
-                  const assistantContent = typeof data.result === "string" ? data.result : "";
-                  const steps = (Array.isArray(data.steps) ? data.steps : []) as MessageStep[];
+                if (viewingThisTurn()) {
                   p.setMessages([
                     ...priorMessages,
                     { role: "user", content: msg },
                     { role: "assistant", content: assistantContent, steps },
                   ]);
+                  if (Array.isArray(data.modelMessages)) {
+                    p.modelMessagesRef.current = data.modelMessages as Array<Record<string, unknown>>;
+                  }
+                }
+              } else {
+                try {
+                  const s = await fetchSession(turnSessionId);
+                  if (viewingThisTurn()) {
+                    if (s?.history?.length) p.setMessages(s.history);
+                    p.modelMessagesRef.current = s?.modelMessages ?? null;
+                  }
+                } catch (e) {
+                  console.error(e);
+                  const assistantContent = typeof data.result === "string" ? data.result : "";
+                  const steps = (Array.isArray(data.steps) ? data.steps : []) as MessageStep[];
+                  if (viewingThisTurn()) {
+                    p.setMessages([
+                      ...priorMessages,
+                      { role: "user", content: msg },
+                      { role: "assistant", content: assistantContent, steps },
+                    ]);
+                  }
                 }
                 await p.refreshSessions();
               }
-              if (p.debugOpenRef.current) void fetchDebugData(sid);
+              if (p.debugOpenRef.current && viewingThisTurn()) void fetchDebugData(turnSessionId);
             } else if (data.type === "chat_aborted") {
-              setStreamingStep(null);
-              setStreamingSteps([]);
-              setStreamingContent("");
-              setStreamingThinking("");
+              if (viewingThisTurn()) {
+                setStreamingStep(null);
+                setStreamingSteps([]);
+                setStreamingContent("");
+                setStreamingThinking("");
+              }
               const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
-              if (hist.length) p.setMessages(hist);
+              if (hist.length && viewingThisTurn()) p.setMessages(hist);
               if (!ephemeral) {
                 try {
-                  const s = await fetchSession(sid);
-                  if (s?.history?.length) p.setMessages(s.history);
-                  p.modelMessagesRef.current = s?.modelMessages ?? null;
+                  const s = await fetchSession(turnSessionId);
+                  if (viewingThisTurn()) {
+                    if (s?.history?.length) p.setMessages(s.history);
+                    p.modelMessagesRef.current = s?.modelMessages ?? null;
+                  }
                 } catch (e) {
                   console.error(e);
                 }
                 await p.refreshSessions();
               }
             } else if (data.type === "error") {
-              setStreamingStep(null);
-              setStreamingSteps([]);
-              setStreamingContent("");
-              setStreamingThinking("");
+              if (viewingThisTurn()) {
+                setStreamingStep(null);
+                setStreamingSteps([]);
+                setStreamingContent("");
+                setStreamingThinking("");
+              }
               const errText = typeof data.error === "string" ? data.error : "Unknown error";
               await failWithAssistantError(errText);
             }
@@ -279,6 +485,12 @@ export function useChatStreaming(p: Args) {
       } finally {
         abortControllerRef.current = null;
         activeRequestIdRef.current = null;
+        inFlightSessionIdRef.current = null;
+        inFlightEphemeralRef.current = false;
+        rawChatPendingRef.current = false;
+        streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
+        turnMessagesSnapshotRef.current = null;
+        setInFlightSessionId(null);
         setChatPending(false);
       }
     },
@@ -302,6 +514,9 @@ export function useChatStreaming(p: Args) {
     const controller = abortControllerRef.current;
     if (!controller) return;
 
+    const turnSid = inFlightSessionIdRef.current;
+    const turnEphemeral = inFlightEphemeralRef.current;
+
     if (requestId) {
       fetch("/api/chat/abort", {
         method: "POST",
@@ -319,30 +534,35 @@ export function useChatStreaming(p: Args) {
     setStreamingContent("");
     setStreamingThinking("");
     setChatPending(false);
+    setInFlightSessionId(null);
+    inFlightSessionIdRef.current = null;
+    inFlightEphemeralRef.current = false;
+    rawChatPendingRef.current = false;
+    streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
+    turnMessagesSnapshotRef.current = null;
 
     p.setMessages((prev) => {
+      if (!turnSid || p.activeSessionIdRef.current !== turnSid) return prev;
       const halted: Message[] = [
         ...prev,
         { role: "assistant" as const, content: "*Response halted by user.*" },
       ];
-      if (!p.isEphemeralRef.current) {
-        const sid = p.activeSessionIdRef.current;
-        if (sid) {
-          void patchSessionApi(sid, { history: halted }).catch((e) => console.error(e));
-        }
+      if (!turnEphemeral) {
+        void patchSessionApi(turnSid, { history: halted }).catch((e) => console.error(e));
       }
       return halted;
     });
-  }, [p.activeSessionIdRef, p.isEphemeralRef, p.setMessages]);
+  }, [p.activeSessionIdRef, p.setMessages]);
 
   const sendMessage = useCallback(
     async (e?: FormEvent) => {
       if (e) e.preventDefault();
-      if (!input.trim() || !p.activeSessionId) return;
+      const sid = p.activeSessionId;
+      if (!input.trim() || !sid) return;
       const msg = input.trim();
       if (!p.ollamaSendReady) return;
       setInput("");
-      await runChatTurn(p.messages, msg, { rebuildModelMessages: false });
+      await runChatTurn(sid, p.messages, msg, { rebuildModelMessages: false });
     },
     [input, p.activeSessionId, p.messages, p.ollamaSendReady, runChatTurn],
   );
@@ -351,12 +571,13 @@ export function useChatStreaming(p: Args) {
     const tc = p.truncateConfirm;
     p.setTruncateConfirm(null);
     p.setEditingUserIndex(null);
-    if (!tc || !p.activeSessionId) return;
+    const sid = p.activeSessionId;
+    if (!tc || !sid) return;
     const row = p.messages[tc.userIndex];
     if (!row || row.role !== "user") return;
     const text = tc.kind === "edit" ? tc.text : row.content;
     if (!text.trim()) return;
-    await runChatTurn(p.messages.slice(0, tc.userIndex), text, { rebuildModelMessages: true });
+    await runChatTurn(sid, p.messages.slice(0, tc.userIndex), text, { rebuildModelMessages: true });
   }, [p.activeSessionId, p.messages, p.setEditingUserIndex, p.setTruncateConfirm, p.truncateConfirm, runChatTurn]);
 
   const toggleDebug = useCallback(() => {
@@ -367,7 +588,10 @@ export function useChatStreaming(p: Args) {
     p.setDebugOpen((v) => !v);
   }, [fetchDebugData, p.activeSessionId, p.debugOpen, p.fetchOllamaHealth, p.setDebugOpen]);
 
-  const headerChatBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
+  const sessionChatBusy =
+    (chatPending || streamingStep !== null || streamingSteps.length > 0) &&
+    inFlightSessionId != null &&
+    inFlightSessionId === p.activeSessionId;
 
   return {
     input,
@@ -386,13 +610,13 @@ export function useChatStreaming(p: Args) {
     setEditingUserIndex: p.setEditingUserIndex,
     truncateConfirm: p.truncateConfirm,
     setTruncateConfirm: p.setTruncateConfirm,
-    chatPending,
+    chatPending: sessionChatBusy,
     runChatTurn,
     stopGeneration,
     sendMessage,
     confirmTruncateAndRetry,
     toggleDebug,
     fetchDebugData,
-    headerChatBusy,
+    headerChatBusy: sessionChatBusy,
   };
 }
