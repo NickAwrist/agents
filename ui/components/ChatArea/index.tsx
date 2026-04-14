@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect } from "react";
 import { Bot } from "lucide-react";
+import { useStickToBottom } from "use-stick-to-bottom";
 import { MessageItem } from "../MessageItem";
 import { MarkdownMessage } from "../MarkdownMessage";
 import { traceStepsForDisplay } from "../ExecutionTrace";
@@ -20,55 +21,16 @@ export function ChatArea({
   onRequestEditConfirm,
   onRequestRetryConfirm,
 }: ChatAreaProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const wasAtBottomRef = useRef(true);
+  const { scrollRef, contentRef, scrollToBottom, isAtBottom } = useStickToBottom({
+    initial: "instant",
+  });
   const isBusy = chatPending || streamingStep !== null || streamingSteps.length > 0;
 
-  const scrollMessagesToBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, []);
-
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (!container) return;
-    const onScroll = () => {
-      const gap = container.scrollHeight - container.scrollTop - container.clientHeight;
-      wasAtBottomRef.current = gap < 80;
-    };
-    container.addEventListener("scroll", onScroll, { passive: true });
-    return () => container.removeEventListener("scroll", onScroll);
-  }, []);
-
   useLayoutEffect(() => {
-    scrollMessagesToBottom();
-    wasAtBottomRef.current = true;
-    let cancelled = false;
-    requestAnimationFrame(() => {
-      if (cancelled) return;
-      scrollMessagesToBottom();
-      requestAnimationFrame(() => {
-        if (!cancelled) scrollMessagesToBottom();
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [messages, streamingStep, streamingSteps, streamingContent, scrollMessagesToBottom]);
-
-  useEffect(() => {
-    const content = contentRef.current;
-    if (!content) return;
-    const ro = new ResizeObserver(() => {
-      if (wasAtBottomRef.current) {
-        scrollMessagesToBottom();
-      }
-    });
-    ro.observe(content);
-    return () => ro.disconnect();
-  }, [scrollMessagesToBottom]);
+    if (isAtBottom) {
+      void scrollToBottom({ animation: "instant", preserveScrollPosition: true });
+    }
+  }, [footerInset, isAtBottom, scrollToBottom]);
 
   return (
     <div className="relative h-full min-h-0 flex-1 overflow-x-hidden">
