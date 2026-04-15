@@ -31,13 +31,23 @@ export class BaseAgent {
 
     this.tools = tools || [];
     this.model = model || "gemma4:31b";
-    const gemmaWarning = "CRITICAL INSTRUCTION: When calling tools, strictly output standard JSON. Do NOT use custom delimiters like <|\"|>. If an argument requires multiple lines (e.g. file contents or code), carefully escape your newlines with \\n, OR preferably use an array of strings if the tool provides a lines property.\n\nCRITICAL DIRECTIVE: You are an agent designed to take action. If you formulate a plan or decide on next steps, you MUST IMMEDIATELY use a tool call to execute the first step of your plan. NEVER stop your response after just outputting a plan or a thought. Your reply must almost always conclude with a tool call unless the entire task is fully completed.";
+    const coreDirectives = [
+      "<tool_format>",
+      "When calling tools, output strictly valid JSON arguments. Do not use custom delimiters or markup.",
+      "For multi-line string arguments (file contents, code), escape newlines as \\n or use an array of strings via the `lines` property when available.",
+      "</tool_format>",
+      "",
+      "<agency>",
+      "You are an action-oriented agent. When you decide on a next step, immediately execute it with a tool call.",
+      "Never end your turn with only a plan or commentary — always follow through with the corresponding tool call unless the task is fully complete.",
+      "</agency>",
+    ].join("\n");
     const base = typeof systemPrompt === "string" ? systemPrompt.trim() : "";
     const p = typeof personalizationBlock === "string" ? personalizationBlock.trim() : "";
     const sd = typeof sessionContextBlock === "string" ? sessionContextBlock.trim() : "";
     const oi = typeof osContextBlock === "string" ? osContextBlock.trim() : "";
     const core = [base, p, sd, oi].filter((s) => s.length > 0).join("\n\n");
-    this.systemPrompt = core ? core + "\n\n" + gemmaWarning : gemmaWarning;
+    this.systemPrompt = core ? core + "\n\n" + coreDirectives : coreDirectives;
 
     this.history = [];
 
