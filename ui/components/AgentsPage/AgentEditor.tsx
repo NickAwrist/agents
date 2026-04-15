@@ -109,6 +109,39 @@ export function AgentEditor({
           </span>
         </label>
 
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border-subtle bg-muted/15 px-3 py-2.5">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 shrink-0 rounded border-border-subtle accent-accent"
+            checked={editor.include_session_directory !== 0}
+            onChange={(e) =>
+              setEditor((p) => ({ ...p, include_session_directory: e.target.checked ? 1 : 0 }))
+            }
+          />
+          <span className="text-[0.8125rem] leading-snug text-foreground">
+            <span className="font-medium">Include session directory</span>
+            <span className="mt-0.5 block text-[0.75rem] font-normal text-muted-foreground">
+              When enabled, this agent receives the chat session working directory in its system prompt. Tools always use
+              the session directory regardless of this setting.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border-subtle bg-muted/15 px-3 py-2.5">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 shrink-0 rounded border-border-subtle accent-accent"
+            checked={editor.include_os_info !== 0}
+            onChange={(e) => setEditor((p) => ({ ...p, include_os_info: e.target.checked ? 1 : 0 }))}
+          />
+          <span className="text-[0.8125rem] leading-snug text-foreground">
+            <span className="font-medium">Include OS info</span>
+            <span className="mt-0.5 block text-[0.75rem] font-normal text-muted-foreground">
+              When enabled, this agent receives the auto-detected server OS (platform/arch/release) in its system prompt.
+            </span>
+          </span>
+        </label>
+
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 flex items-center gap-1.5 text-[0.75rem] font-medium text-muted-foreground">
             <Wrench size={13} />

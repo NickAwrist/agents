@@ -24,6 +24,8 @@ export class RunContext {
   readonly agentName: string;
   readonly prompt: string;
   readonly signal?: AbortSignal;
+  /** Resolved absolute directory for tools (session override or user home). */
+  readonly sessionDir?: string;
   private _steps: Step[] = [];
   private _onChange?: OnStepChange;
   private _onStreamDelta?: OnStreamDelta;
@@ -34,6 +36,7 @@ export class RunContext {
     onChange?: OnStepChange,
     onStreamDelta?: OnStreamDelta,
     signal?: AbortSignal,
+    sessionDir?: string,
   ) {
     this.agentInstance = agentInstance;
     this.agentName = agentInstance.name;
@@ -41,6 +44,7 @@ export class RunContext {
     this._onChange = onChange;
     this._onStreamDelta = onStreamDelta;
     this.signal = signal;
+    this.sessionDir = sessionDir;
   }
 
   /** Emit a streaming token delta for content and/or thinking. */
@@ -91,7 +95,14 @@ export class RunContext {
 
   /** Create a child RunContext for a nested agent, attached to the current step. */
   createChild(agentInstance: BaseAgent, prompt: string): RunContext {
-    const child = new RunContext(agentInstance, prompt, this._onChange, this._onStreamDelta, this.signal);
+    const child = new RunContext(
+      agentInstance,
+      prompt,
+      this._onChange,
+      this._onStreamDelta,
+      this.signal,
+      this.sessionDir,
+    );
     const step = this._lastRunning();
     if (step) {
       step.childContext = child;

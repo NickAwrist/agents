@@ -89,6 +89,8 @@ export function useSessionsAndNavigation(p: Args) {
     effectiveDefaultChatModel(loadUserSettings(), "gemma4:e4b"),
   );
   const [selectedSessionAgent, setSelectedSessionAgent] = useState("general_agent");
+  const [sessionDirectory, setSessionDirectory] = useState("");
+  const sessionDirectoryRef = useRef("");
 
   const loadGenRef = useRef(0);
   const restoreDoneRef = useRef(false);
@@ -96,6 +98,7 @@ export function useSessionsAndNavigation(p: Args) {
   p.activeSessionIdRef.current = activeSessionId;
   p.isEphemeralRef.current = isEphemeral;
   p.selectedSessionAgentRef.current = selectedSessionAgent;
+  sessionDirectoryRef.current = sessionDirectory;
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -138,6 +141,12 @@ export function useSessionsAndNavigation(p: Args) {
       setSelectedModel(next);
       const an = stored?.agentName?.trim();
       setSelectedSessionAgent(an && an.length > 0 ? an : p.serverDefaultChatAgent);
+      const sd =
+        stored?.sessionDirectory != null && String(stored.sessionDirectory).trim()
+          ? String(stored.sessionDirectory).trim()
+          : "";
+      setSessionDirectory(sd);
+      sessionDirectoryRef.current = sd;
     })();
     return () => {
       cancelled = true;
@@ -167,6 +176,24 @@ export function useSessionsAndNavigation(p: Args) {
     },
     [p.activeSessionIdRef, p.isEphemeralRef, refreshSessions],
   );
+
+  const setSessionDirectoryDraft = useCallback((next: string) => {
+    setSessionDirectory(next);
+    sessionDirectoryRef.current = next;
+  }, []);
+
+  const persistSessionDirectory = useCallback(async () => {
+    if (p.isEphemeralRef.current) return;
+    const sid = p.activeSessionIdRef.current;
+    if (!sid) return;
+    const trimmed = sessionDirectoryRef.current.trim();
+    try {
+      await patchSessionApi(sid, { sessionDirectory: trimmed.length > 0 ? trimmed : null });
+      await refreshSessions();
+    } catch (e) {
+      console.error(e);
+    }
+  }, [p.activeSessionIdRef, p.isEphemeralRef, refreshSessions]);
 
   const handleModelChange = useCallback(
     async (model: string) => {
@@ -199,6 +226,12 @@ export function useSessionsAndNavigation(p: Args) {
           const stored = await fetchSession(id);
           if (gen !== loadGenRef.current) return;
           p.modelMessagesRef.current = stored?.modelMessages ?? null;
+          const sd =
+            stored?.sessionDirectory != null && String(stored.sessionDirectory).trim()
+              ? String(stored.sessionDirectory).trim()
+              : "";
+          setSessionDirectory(sd);
+          sessionDirectoryRef.current = sd;
         } catch (e) {
           if (gen !== loadGenRef.current) return;
           console.error(e);
@@ -217,6 +250,12 @@ export function useSessionsAndNavigation(p: Args) {
         if (gen !== loadGenRef.current) return;
         if (stored?.history?.length) p.setMessages(stored.history);
         p.modelMessagesRef.current = stored?.modelMessages ?? null;
+        const sd =
+          stored?.sessionDirectory != null && String(stored.sessionDirectory).trim()
+            ? String(stored.sessionDirectory).trim()
+            : "";
+        setSessionDirectory(sd);
+        sessionDirectoryRef.current = sd;
       } catch (e) {
         if (gen !== loadGenRef.current) return;
         console.error(e);
@@ -374,6 +413,8 @@ export function useSessionsAndNavigation(p: Args) {
     p.modelMessagesRef.current = null;
     setSidebarOpen(false);
     setSelectedSessionAgent(p.serverDefaultChatAgent);
+    setSessionDirectory("");
+    sessionDirectoryRef.current = "";
     pushSessionUrl(null);
   }, [
     p.activeSessionIdRef,
@@ -406,6 +447,8 @@ export function useSessionsAndNavigation(p: Args) {
       } else {
         setActiveSessionId(null);
         setIsEphemeral(false);
+        setSessionDirectory("");
+        sessionDirectoryRef.current = "";
         p.setMessages([]);
         p.resetStreamingUi();
         p.setEditingUserIndex(null);
@@ -437,6 +480,8 @@ export function useSessionsAndNavigation(p: Args) {
     p.setDebugData(null);
     setSidebarOpen(false);
     setSelectedSessionAgent(p.serverDefaultChatAgent);
+    setSessionDirectory("");
+    sessionDirectoryRef.current = "";
     pushSessionUrl(null);
   }, [
     p.activeSessionIdRef,
@@ -462,6 +507,8 @@ export function useSessionsAndNavigation(p: Args) {
       }
       if (activeSessionId === id) {
         setActiveSessionId(null);
+        setSessionDirectory("");
+        sessionDirectoryRef.current = "";
         p.setMessages([]);
         p.setDebugOpen(false);
         p.setDebugData(null);
@@ -549,8 +596,12 @@ export function useSessionsAndNavigation(p: Args) {
     setPendingDeleteSessionId,
     selectedModel,
     selectedSessionAgent,
+    sessionDirectory,
+    sessionDirectoryRef,
     refreshSessions,
     handleSessionAgentChange,
+    setSessionDirectoryDraft,
+    persistSessionDirectory,
     handleModelChange,
     switchToSession,
     createSession,

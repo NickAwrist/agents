@@ -1,6 +1,9 @@
+import { homedir } from "node:os";
 import type { Tool } from "ollama";
 import { BaseTool } from "./BaseTool";
-import fs from 'fs/promises';
+import fs from "fs/promises";
+import type { RunContext } from "../RunContext";
+import { resolveToolFilePath } from "../sessionDirectory";
 import { loadGitignore } from "../utils/gitignoreFilter";
 
 export class ListFilesTool extends BaseTool {
@@ -24,11 +27,10 @@ export class ListFilesTool extends BaseTool {
     };
   }
 
-  override async execute(args: Record<string, unknown>): Promise<string> {
-    const path =
-      typeof args.path === 'string' && args.path.length > 0
-        ? args.path
-        : process.cwd();
+  override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
+    const raw =
+      typeof args.path === "string" && args.path.length > 0 ? args.path : ctx?.sessionDir ?? homedir();
+    const path = resolveToolFilePath(raw, ctx?.sessionDir);
     const entries = await fs.readdir(path, { withFileTypes: true });
     let files = entries.map(entry => entry.isDirectory() ? entry.name + '/' : entry.name);
 

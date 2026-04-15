@@ -1,7 +1,8 @@
-import { BaseTool } from "./BaseTool";
-import type { Tool } from "ollama";
-import type { RunContext } from "../RunContext";
+import { homedir } from "node:os";
 import { exec } from "child_process";
+import type { Tool } from "ollama";
+import { BaseTool } from "./BaseTool";
+import type { RunContext } from "../RunContext";
 import { loadGitignore, filterOutputLines } from "../utils/gitignoreFilter";
 
 export class BashTool extends BaseTool {
@@ -38,9 +39,11 @@ export class BashTool extends BaseTool {
     const signal = ctx?.signal;
     if (signal?.aborted) return "[command aborted]";
 
+    const cwd = ctx?.sessionDir?.trim() || homedir();
+
     try {
       const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-        const child = exec(command, (error, stdout, stderr) => {
+        const child = exec(command, { cwd }, (error, stdout, stderr) => {
           if (error) {
             reject(Object.assign(error, { stdout, stderr }));
           } else {

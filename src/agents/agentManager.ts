@@ -13,6 +13,8 @@ import type { BaseTool } from '../tools/BaseTool';
 import type { RunContext } from '../RunContext';
 import { AgentTool } from '../tools/AgentTool';
 import { getAgentByName } from '../db/index';
+import { formatSessionDirectoryPromptBlock } from '../sessionDirectory';
+import { getOsInfoBlock } from '../systemInfo';
 
 export const BUILTIN_TOOLS = [
   "create_file",
@@ -27,9 +29,15 @@ export const BUILTIN_TOOLS = [
   "generate_image",
 ] as const;
 
+export type CreateAgentOptions = {
+  personalizationBlock?: string | null;
+  /** Resolved absolute directory tools use; drives optional session prompt block. */
+  toolSessionDir?: string;
+};
+
 export const agentManager = {
   createAgentForContext(agentName: string, ctx?: RunContext): BaseAgent {
-    const agent = this.createAgent(agentName);
+    const agent = this.createAgent(agentName, { toolSessionDir: ctx?.sessionDir });
     const parentModel = ctx?.agentInstance?.model;
     if (typeof parentModel === "string" && parentModel.length > 0) {
       agent.model = parentModel;
@@ -37,11 +45,20 @@ export const agentManager = {
     return agent;
   },
 
-  createAgent(agentName: string, personalizationBlock?: string | null): BaseAgent {
+  createAgent(agentName: string, opts?: CreateAgentOptions): BaseAgent {
+    const personalizationBlock = opts?.personalizationBlock;
+    const toolSessionDir = opts?.toolSessionDir;
+
     const config = getAgentByName(agentName);
     if (!config) {
       throw new Error(`Agent configuration for '${agentName}' not found in database`);
     }
+
+    const sessionContextBlock =
+      config.include_session_directory && typeof toolSessionDir === "string" && toolSessionDir.length > 0
+        ? formatSessionDirectoryPromptBlock(toolSessionDir)
+        : undefined;
+    const osContextBlock = config.include_os_info ? getOsInfoBlock() : undefined;
 
     const agent = new BaseAgent(
       config.name,
@@ -50,6 +67,8 @@ export const agentManager = {
       undefined,
       config.system_prompt,
       personalizationBlock ?? undefined,
+      sessionContextBlock,
+      osContextBlock,
     );
 
     if (config.tools.length > 0) {

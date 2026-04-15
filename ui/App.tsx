@@ -139,6 +139,9 @@ export default function App() {
                       : undefined
                   }
                   isEphemeral={app.isEphemeral}
+                  sessionDirectory={app.sessionDirectory}
+                  onSessionDirectoryDraft={app.setSessionDirectoryDraft}
+                  onSessionDirectoryPersist={app.persistSessionDirectory}
                 />
 
                 <section className={cx("flex h-full min-h-0 overflow-x-hidden", !app.activeSessionId && "pt-0")}>

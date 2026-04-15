@@ -30,6 +30,23 @@ function migrateAgentsIncludePersonalizationColumn(db: Database) {
   }
 }
 
+function migrateSessionsDirectoryColumn(db: Database) {
+  const cols = db.query("PRAGMA table_info(sessions)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "session_directory")) {
+    db.run("ALTER TABLE sessions ADD COLUMN session_directory TEXT");
+  }
+}
+
+function migrateAgentsSessionDirAndOsColumns(db: Database) {
+  const cols = db.query("PRAGMA table_info(agents)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "include_session_directory")) {
+    db.run("ALTER TABLE agents ADD COLUMN include_session_directory INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!cols.some((c) => c.name === "include_os_info")) {
+    db.run("ALTER TABLE agents ADD COLUMN include_os_info INTEGER NOT NULL DEFAULT 0");
+  }
+}
+
 function ensureDefaultChatAgentSetting(db: Database) {
   db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)", [
     DEFAULT_CHAT_AGENT_KEY,
@@ -51,6 +68,7 @@ export type SessionRow = {
   model: string | null;
   model_messages: string | null;
   agent_name: string | null;
+  session_directory: string | null;
 };
 
 let dbSingleton: Database | null = null;
@@ -114,7 +132,9 @@ export function getDb(): Database {
   `);
 
   migrateSessionsAgentColumn(db);
+  migrateSessionsDirectoryColumn(db);
   migrateAgentsIncludePersonalizationColumn(db);
+  migrateAgentsSessionDirAndOsColumns(db);
   seedDefaultAgents(db);
   ensureDefaultChatAgentSetting(db);
 
@@ -170,7 +190,7 @@ export function listSessionSummaries(): SessionSummaryRow[] {
 export function getSessionById(id: string): SessionRow | null {
   const row = getDb()
     .query(
-      `SELECT id, created_at, updated_at, title, model, model_messages, agent_name FROM sessions WHERE id = ?`,
+      `SELECT id, created_at, updated_at, title, model, model_messages, agent_name, session_directory FROM sessions WHERE id = ?`,
     )
     .get(id) as SessionRow | null;
   return row ?? null;
@@ -333,6 +353,7 @@ export function createSessionRow(
     model,
     model_messages: null,
     agent_name: resolvedAgent,
+    session_directory: null,
   };
 }
 
@@ -349,6 +370,7 @@ export function patchSessionRow(
     model?: string | null;
     model_messages?: Array<Record<string, unknown>> | null;
     agent_name?: string | null;
+    session_directory?: string | null;
     updated_at?: number;
   },
 ): boolean {
@@ -358,6 +380,8 @@ export function patchSessionRow(
   const title = patch.title !== undefined ? patch.title : existing.title;
   const model = patch.model !== undefined ? patch.model : existing.model;
   const agentName = patch.agent_name !== undefined ? patch.agent_name : existing.agent_name;
+  const sessionDirectory =
+    patch.session_directory !== undefined ? patch.session_directory : existing.session_directory;
   let modelMessagesJson: string | null = existing.model_messages;
   if (patch.model_messages !== undefined) {
     modelMessagesJson =
@@ -366,8 +390,8 @@ export function patchSessionRow(
   const updatedAt = patch.updated_at ?? Date.now();
 
   getDb().run(
-    `UPDATE sessions SET title = ?, model = ?, model_messages = ?, agent_name = ?, updated_at = ? WHERE id = ?`,
-    [title, model, modelMessagesJson, agentName, updatedAt, id],
+    `UPDATE sessions SET title = ?, model = ?, model_messages = ?, agent_name = ?, session_directory = ?, updated_at = ? WHERE id = ?`,
+    [title, model, modelMessagesJson, agentName, sessionDirectory, updatedAt, id],
   );
   return true;
 }
@@ -418,6 +442,8 @@ export type AgentRow = {
   description: string;
   system_prompt: string;
   include_personalization: number;
+  include_session_directory: number;
+  include_os_info: number;
   is_default: number;
   created_at: number;
   updated_at: number;
@@ -430,30 +456,36 @@ const DEFAULT_AGENTS: Array<{
   description: string;
   system_prompt: string;
   tools: string[];
+  include_personalization: number;
+  include_session_directory: number;
+  include_os_info: number;
 }> = [
   {
     name: "general_agent",
     description: "A general agent that can answer general queries or call agents to perform tasks.",
     tools: ["coding_agent", "computer_agent", "web_search"],
     system_prompt: "You are a helpful assistant.",
-  },
-  {
-    name: "code_discovery_agent",
-    description: "An agent that helps find where a certain functionality is located in the codebase. If you do now know where a particular feature is, instead of listing all the files and reading each, just call this tool.",
-    tools: ["list_files", "read_file", "modify_plan", "grep"],
-    system_prompt: "You are an expert code discovery agent. Your primary goal is to help users locate specific functionality, classes, methods, or logic within a codebase.\n\nYour process should generally be:\n1. Use 'list_files' to understand the overall project structure.\n2. Use 'grep' to search for keywords, function names, or strings related to the functionality.\n3. Use 'read_file' to examine the contents of promising files and confirm if they contain the target functionality.\n4. Use 'modify_plan' to track your search progress and refine your strategy.\n\nWhen you find the functionality, provide the exact file path and the line numbers or code snippet where it is located. Be thorough and explain why you believe this is the correct location.\n\nCRITICAL RULES FOR TOOL USAGE:\n1. ALWAYS use the full path from the project root when reading or searching files.\n2. If a search returns too many results, refine your grep pattern or use list_files to narrow down the directory.",
+    include_personalization: 1,
+    include_session_directory: 0,
+    include_os_info: 0,
   },
   {
     name: "computer_agent",
     description: "A computer agent that can perform tasks that require a computer. When calling this subagent, you must provide the expected result you desire from the task.",
     tools: ["bash"],
     system_prompt: "You are a computer agent that can perform tasks that require a computer. You are to complete the task to the best of your ability given the tools available to you.\nYour response is to another AI agent. CRITICAL: If your task involves reading files, listing directories, or retrieving any information, you MUST include the actual, full contents or results in your final response. Do NOT summarize or just state that you have completed the read; the requesting agent needs the actual data to proceed.",
+    include_personalization: 0,
+    include_session_directory: 1,
+    include_os_info: 1,
   },
   {
     name: "coding_agent",
     description: "A coding that can process coding and programming tasks. Provide specific instructions and expected outcomes when calling it.",
     tools: ["list_files", "create_file", "read_file", "run_tsc", "modify_plan", "grep"],
     system_prompt: "You are an expert software engineering agent capable of processing complex programming tasks, refactoring code, writing tests, and implementing features.\nAnalyze the problem step-by-step before making changes. Use the provided tools to read existing code context, create new files, or apply fixes.\n\nCRITICAL RULES FOR TOOL USAGE:\n1. ALWAYS use the full path from the project root (e.g., 'src/tools/filename.ts' instead of just 'filename.ts') when reading or creating files.\n2. If a tool call fails (like getting an ENOENT error), DO NOT repeatedly call the same tool with the same arguments. Analyze the error and fix your path.\n\nTESTING AND ITERATION:\nWhenever you write or modify code (or create a file), you MUST use your tools to test it (e.g., use the run_tsc tool to check for type errors) before considering your task complete. If your test tool outputs any errors or fails, you must analyze the logs, modify your code to fix the root cause, and re-test. Continually iterate this fix-and-test loop until your tests pass successfully.\n\nCRITICAL LOOP REQUIREMENT: If you find an error and decide how to fix it, do NOT just output the \"Corrected structure\" as a text response. You MUST immediately call the appropriate tool (like create_file) to apply your fix to the file system. Your turn should end with a tool call, not a textual summary of what should be done.\n\nCRITICAL: Your response is being sent back to the orchestrator AI agent. If you are asked to read code, summarize your findings, or perform analysis, you MUST include the actual results, complete code, or findings in your final response. Do NOT provide a generic summary stating that you completed the read. The orchestrator depends on your output.",
+    include_personalization: 0,
+    include_session_directory: 1,
+    include_os_info: 1,
   },
 ];
 
@@ -463,7 +495,7 @@ function seedDefaultAgents(db: Database) {
 
   const now = Date.now();
   const insertAgent = db.prepare(
-    "INSERT INTO agents (id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, ?, ?)",
+    "INSERT INTO agents (id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
   );
   const insertTool = db.prepare(
     "INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)",
@@ -472,7 +504,17 @@ function seedDefaultAgents(db: Database) {
   const tx = db.transaction(() => {
     for (const a of DEFAULT_AGENTS) {
       const id = crypto.randomUUID();
-      insertAgent.run(id, a.name, a.description, a.system_prompt, now, now);
+      insertAgent.run(
+        id,
+        a.name,
+        a.description,
+        a.system_prompt,
+        a.include_personalization,
+        a.include_session_directory,
+        a.include_os_info,
+        now,
+        now,
+      );
       a.tools.forEach((t, i) => insertTool.run(id, t, i));
     }
   });
@@ -483,7 +525,7 @@ export function listAgents(): AgentWithTools[] {
   const db = getDb();
   const rows = db
     .query(
-      "SELECT id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at FROM agents ORDER BY created_at ASC",
+      "SELECT id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at FROM agents ORDER BY created_at ASC",
     )
     .all() as AgentRow[];
   const toolStmt = db.query(
@@ -499,7 +541,7 @@ export function getAgentById(id: string): AgentWithTools | null {
   const db = getDb();
   const row = db
     .query(
-      "SELECT id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at FROM agents WHERE id = ?",
+      "SELECT id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at FROM agents WHERE id = ?",
     )
     .get(id) as AgentRow | null;
   if (!row) return null;
@@ -513,7 +555,7 @@ export function getAgentByName(name: string): AgentWithTools | null {
   const db = getDb();
   const row = db
     .query(
-      "SELECT id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at FROM agents WHERE name = ?",
+      "SELECT id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at FROM agents WHERE name = ?",
     )
     .get(name) as AgentRow | null;
   if (!row) return null;
@@ -530,16 +572,20 @@ export function createAgentRow(
     system_prompt: string;
     tools: string[];
     include_personalization: number;
+    include_session_directory: number;
+    include_os_info: number;
   },
 ): AgentWithTools {
   const db = getDb();
   const id = crypto.randomUUID();
   const now = Date.now();
   const inc = data.include_personalization ? 1 : 0;
+  const incSd = data.include_session_directory ? 1 : 0;
+  const incOs = data.include_os_info ? 1 : 0;
   const tx = db.transaction(() => {
     db.run(
-      "INSERT INTO agents (id, name, description, system_prompt, include_personalization, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-      [id, data.name, data.description, data.system_prompt, inc, now, now],
+      "INSERT INTO agents (id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+      [id, data.name, data.description, data.system_prompt, inc, incSd, incOs, now, now],
     );
     const ins = db.prepare("INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)");
     data.tools.forEach((t, i) => ins.run(id, t, i));
@@ -551,6 +597,8 @@ export function createAgentRow(
     description: data.description,
     system_prompt: data.system_prompt,
     include_personalization: inc,
+    include_session_directory: incSd,
+    include_os_info: incOs,
     is_default: 0,
     created_at: now,
     updated_at: now,
@@ -566,6 +614,8 @@ export function updateAgentRow(
     system_prompt: string;
     tools: string[];
     include_personalization: number;
+    include_session_directory: number;
+    include_os_info: number;
   },
 ): boolean {
   const db = getDb();
@@ -573,10 +623,12 @@ export function updateAgentRow(
   if (!existing) return false;
   const now = Date.now();
   const inc = data.include_personalization ? 1 : 0;
+  const incSd = data.include_session_directory ? 1 : 0;
+  const incOs = data.include_os_info ? 1 : 0;
   const tx = db.transaction(() => {
     db.run(
-      "UPDATE agents SET name = ?, description = ?, system_prompt = ?, include_personalization = ?, updated_at = ? WHERE id = ?",
-      [data.name, data.description, data.system_prompt, inc, now, id],
+      "UPDATE agents SET name = ?, description = ?, system_prompt = ?, include_personalization = ?, include_session_directory = ?, include_os_info = ?, updated_at = ? WHERE id = ?",
+      [data.name, data.description, data.system_prompt, inc, incSd, incOs, now, id],
     );
     db.run("DELETE FROM agent_tools WHERE agent_id = ?", [id]);
     const ins = db.prepare("INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)");

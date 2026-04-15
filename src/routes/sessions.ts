@@ -1,5 +1,6 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import crypto from "crypto";
+import { pickFolderNative } from "../nativeFolderPicker";
 import {
   createSessionRow,
   deleteSessionRow,
@@ -15,6 +16,33 @@ import {
 } from "../db/index";
 
 const router = Router();
+
+function isFolderPickerAllowed(req: Request): boolean {
+  const raw = req.socket.remoteAddress ?? "";
+  return (
+    raw === "127.0.0.1" ||
+    raw === "::1" ||
+    raw === "::ffff:127.0.0.1" ||
+    raw.endsWith("127.0.0.1")
+  );
+}
+
+router.post("/pick-directory", async (req, res) => {
+  if (!isFolderPickerAllowed(req)) {
+    res.status(403).json({
+      error: "Folder picker only runs on the machine where the API server is started (localhost).",
+    });
+    return;
+  }
+  try {
+    const path = await pickFolderNative();
+    res.json({ path });
+  } catch (e) {
+    res.status(500).json({
+      error: e instanceof Error ? e.message : "Failed to open folder dialog",
+    });
+  }
+});
 
 router.get("/", (_req, res) => {
   const rows = listSessionSummaries();
@@ -45,6 +73,7 @@ router.get("/:id", (req, res) => {
     modelMessages: parseModelMessages(row.model_messages),
     model: row.model,
     agentName: resolveSessionAgentName(row),
+    sessionDirectory: row.session_directory ?? null,
   });
 });
 
@@ -75,6 +104,7 @@ router.patch("/:id", (req, res) => {
     modelMessages?: unknown;
     history?: unknown;
     agentName?: unknown;
+    sessionDirectory?: unknown;
   };
   const now = Date.now();
 
@@ -128,6 +158,15 @@ router.patch("/:id", (req, res) => {
       }
       patch.agent_name = t;
     }
+  }
+  if ("sessionDirectory" in body && body.sessionDirectory !== undefined && !Array.isArray(body.history)) {
+    const d = body.sessionDirectory;
+    patch.session_directory =
+      d === null || d === undefined
+        ? null
+        : typeof d === "string"
+          ? d.trim() || null
+          : null;
   }
   patchSessionRow(id, patch);
   res.json({ ok: true });

@@ -1,8 +1,11 @@
+import { homedir } from "node:os";
 import type { Tool } from "ollama";
 import type { Ignore } from "ignore";
 import { BaseTool } from "./BaseTool";
-import fs from 'fs/promises';
-import pathModule from 'path';
+import fs from "fs/promises";
+import pathModule from "path";
+import type { RunContext } from "../RunContext";
+import { resolveToolFilePath } from "../sessionDirectory";
 import { loadGitignore } from "../utils/gitignoreFilter";
 
 export class GrepTool extends BaseTool {
@@ -28,9 +31,11 @@ export class GrepTool extends BaseTool {
     };
   }
 
-  override async execute(args: Record<string, unknown>): Promise<string> {
-    const patternStr = typeof args.pattern === 'string' ? args.pattern : '';
-    const path = typeof args.path === 'string' && args.path.length > 0 ? args.path : process.cwd();
+  override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
+    const patternStr = typeof args.pattern === "string" ? args.pattern : "";
+    const rawPath =
+      typeof args.path === "string" && args.path.length > 0 ? args.path : ctx?.sessionDir ?? homedir();
+    const path = resolveToolFilePath(rawPath, ctx?.sessionDir);
 
     if (!patternStr) {
       return 'Error: missing pattern';

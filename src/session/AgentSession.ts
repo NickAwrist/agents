@@ -8,15 +8,25 @@ export class AgentSession extends EventEmitter {
   public sessionId: string;
   public history: { role: string; content: string; steps?: HistoryWireStep[] }[] = [];
   private generalAgent: any;
+  private readonly toolSessionDir?: string;
 
   constructor(
     sessionId: string,
-    options?: { model?: string; agentName?: string; personalizationBlock?: string | null },
+    options?: {
+      model?: string;
+      agentName?: string;
+      personalizationBlock?: string | null;
+      toolSessionDir?: string;
+    },
   ) {
     super();
     this.sessionId = sessionId;
+    this.toolSessionDir = options?.toolSessionDir;
     const agentName = options?.agentName?.trim() || "general_agent";
-    this.generalAgent = agentManager.createAgent(agentName, options?.personalizationBlock);
+    this.generalAgent = agentManager.createAgent(agentName, {
+      personalizationBlock: options?.personalizationBlock,
+      toolSessionDir: options?.toolSessionDir,
+    });
     const m = options?.model?.trim();
     if (m) this.generalAgent.model = m;
   }
@@ -65,6 +75,7 @@ export class AgentSession extends EventEmitter {
         this.emit("stream_delta", { contentDelta, thinkingDelta, agentName });
       },
       signal,
+      this.toolSessionDir,
     );
 
     let result = "Error running agent.";

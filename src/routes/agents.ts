@@ -48,12 +48,22 @@ agentsRoutes.get("/:id", (req, res) => {
 });
 
 agentsRoutes.post("/", (req, res) => {
-  const { name, description, system_prompt, tools, include_personalization } = req.body as {
+  const {
+    name,
+    description,
+    system_prompt,
+    tools,
+    include_personalization,
+    include_session_directory,
+    include_os_info,
+  } = req.body as {
     name?: string;
     description?: string;
     system_prompt?: string;
     tools?: string[];
     include_personalization?: unknown;
+    include_session_directory?: unknown;
+    include_os_info?: unknown;
   };
   if (!name?.trim()) {
     res.status(400).json({ error: "name is required" });
@@ -61,6 +71,9 @@ agentsRoutes.post("/", (req, res) => {
   }
   const inc =
     include_personalization === false || include_personalization === 0 ? 0 : 1;
+  const incSd =
+    include_session_directory === true || include_session_directory === 1 ? 1 : 0;
+  const incOs = include_os_info === true || include_os_info === 1 ? 1 : 0;
   try {
     const agent = createAgentRow({
       name: name.trim(),
@@ -68,6 +81,8 @@ agentsRoutes.post("/", (req, res) => {
       system_prompt: system_prompt?.trim() ?? "",
       tools: Array.isArray(tools) ? tools : [],
       include_personalization: inc,
+      include_session_directory: incSd,
+      include_os_info: incOs,
     });
     res.status(201).json(agent);
   } catch (e: any) {
@@ -80,12 +95,22 @@ agentsRoutes.post("/", (req, res) => {
 });
 
 agentsRoutes.put("/:id", (req, res) => {
-  const { name, description, system_prompt, tools, include_personalization } = req.body as {
+  const {
+    name,
+    description,
+    system_prompt,
+    tools,
+    include_personalization,
+    include_session_directory,
+    include_os_info,
+  } = req.body as {
     name?: string;
     description?: string;
     system_prompt?: string;
     tools?: string[];
     include_personalization?: unknown;
+    include_session_directory?: unknown;
+    include_os_info?: unknown;
   };
   if (!name?.trim()) {
     res.status(400).json({ error: "name is required" });
@@ -93,6 +118,9 @@ agentsRoutes.put("/:id", (req, res) => {
   }
   const inc =
     include_personalization === false || include_personalization === 0 ? 0 : 1;
+  const incSd =
+    include_session_directory === true || include_session_directory === 1 ? 1 : 0;
+  const incOs = include_os_info === true || include_os_info === 1 ? 1 : 0;
   try {
     const ok = updateAgentRow(req.params.id, {
       name: name.trim(),
@@ -100,6 +128,8 @@ agentsRoutes.put("/:id", (req, res) => {
       system_prompt: system_prompt?.trim() ?? "",
       tools: Array.isArray(tools) ? tools : [],
       include_personalization: inc,
+      include_session_directory: incSd,
+      include_os_info: incOs,
     });
     if (!ok) {
       res.status(404).json({ error: "Agent not found" });

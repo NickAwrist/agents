@@ -42,6 +42,7 @@ type Args = {
   isEphemeralRef: MutableRefObject<boolean>;
   userSettingsRef: MutableRefObject<UserSettings>;
   selectedSessionAgentRef: MutableRefObject<string>;
+  sessionDirectoryRef: MutableRefObject<string>;
   modelMessagesRef: MutableRefObject<Array<Record<string, unknown>> | null>;
   debugOpenRef: MutableRefObject<boolean>;
   debugOpen: boolean;
@@ -225,15 +226,30 @@ export function useChatStreaming(p: Args) {
   const fetchDebugData = useCallback(
     async (id: string) => {
       try {
-        const agentName = p.selectedSessionAgentRef.current;
-        const agentsRes = await fetch("/api/agents");
-        const agentsJson = (await agentsRes.json()) as {
-          agents?: Array<{ name: string; system_prompt: string }>;
-        };
-        const row = agentsJson.agents?.find((a) => a.name === agentName);
+        const u = p.userSettingsRef.current;
+        const debugRes = await fetch("/api/chat/debug-prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(p.isEphemeralRef.current
+              ? { ephemeral: true, agentName: p.selectedSessionAgentRef.current }
+              : { sessionId: id }),
+            sessionDirectory: p.sessionDirectoryRef.current.trim() || undefined,
+            personalization: {
+              name: u.name,
+              location: u.location,
+              preferredFormats: u.preferredFormats,
+            },
+          }),
+        });
+        if (!debugRes.ok) {
+          console.error("debug-prompt failed", await debugRes.text().catch(() => ""));
+          return;
+        }
+        const debugJson = (await debugRes.json()) as { systemPrompt?: string };
         const stored = await fetchSession(id);
         p.setDebugData({
-          systemPrompt: row?.system_prompt ?? "",
+          systemPrompt: typeof debugJson.systemPrompt === "string" ? debugJson.systemPrompt : "",
           history: stored?.history ?? [],
           customTitle: stored?.customTitle ?? null,
           modelMessages: stored?.modelMessages,
@@ -242,7 +258,7 @@ export function useChatStreaming(p: Args) {
         console.error("Failed to load debug data", e);
       }
     },
-    [p.selectedSessionAgentRef, p.setDebugData],
+    [p.isEphemeralRef, p.selectedSessionAgentRef, p.sessionDirectoryRef, p.setDebugData, p.userSettingsRef],
   );
 
   const runChatTurn = useCallback(
@@ -336,6 +352,7 @@ export function useChatStreaming(p: Args) {
           } else {
             chatBody.sessionId = turnSessionId;
           }
+          chatBody.sessionDirectory = p.sessionDirectoryRef.current.trim() || undefined;
           res = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -504,6 +521,7 @@ export function useChatStreaming(p: Args) {
       p.refreshSessions,
       p.selectedModel,
       p.selectedSessionAgentRef,
+      p.sessionDirectoryRef,
       p.setMessages,
       p.userSettingsRef,
     ],

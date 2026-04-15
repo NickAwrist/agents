@@ -7,8 +7,10 @@ import {
   getSessionById,
   replaceSessionMessages,
   resolveSessionAgentName,
+  type SessionRow,
   type WireMessage,
 } from "../db/index";
+import { resolveEffectiveToolSessionDir } from "../sessionDirectory";
 import { formatPersonalizationBlock } from "../personalization";
 import { DEFAULT_CHAT_MODEL } from "../constants";
 
@@ -80,6 +82,73 @@ router.post("/abort-session/:sessionId", (req, res) => {
   res.json({ aborted: true });
 });
 
+/** Same system prompt assembly as a live chat turn (personalization, session dir, OS, model warnings). */
+router.post("/debug-prompt", (req, res) => {
+  const body = req.body as {
+    sessionId?: unknown;
+    ephemeral?: unknown;
+    agentName?: unknown;
+    personalization?: unknown;
+    sessionDirectory?: unknown;
+  };
+  const ephemeral = body.ephemeral === true;
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+
+  let persistedSession: SessionRow | null = null;
+  if (!ephemeral) {
+    if (!sessionId) {
+      res.status(400).json({ error: "sessionId required" });
+      return;
+    }
+    persistedSession = getSessionById(sessionId);
+    if (!persistedSession) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+  }
+
+  let chatAgentName: string;
+  if (ephemeral) {
+    const rawAgent = typeof body.agentName === "string" ? body.agentName.trim() : "";
+    chatAgentName = rawAgent && getAgentByName(rawAgent) ? rawAgent : resolveSessionAgentName(null);
+  } else {
+    chatAgentName = resolveSessionAgentName(persistedSession);
+  }
+
+  const toolSessionDir = resolveEffectiveToolSessionDir(
+    body.sessionDirectory,
+    persistedSession?.session_directory,
+  );
+
+  const agentRow = getAgentByName(chatAgentName);
+  if (!agentRow) {
+    res.status(400).json({ error: `Unknown agent '${chatAgentName}'` });
+    return;
+  }
+
+  let personalizationBlock: string | undefined;
+  if (agentRow.include_personalization) {
+    const raw = body.personalization;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const o = raw as Record<string, unknown>;
+      const block = formatPersonalizationBlock({
+        name: typeof o.name === "string" ? o.name : "",
+        location: typeof o.location === "string" ? o.location : "",
+        preferredFormats: typeof o.preferredFormats === "string" ? o.preferredFormats : "",
+      });
+      if (block) personalizationBlock = block;
+    }
+  }
+
+  const session = new AgentSession(crypto.randomUUID(), {
+    model: DEFAULT_CHAT_MODEL,
+    agentName: chatAgentName,
+    personalizationBlock,
+    toolSessionDir,
+  });
+  res.json({ systemPrompt: session.getSystemPromptForDebug() });
+});
+
 router.post("/", async (req, res) => {
   const body = req.body as {
     sessionId?: unknown;
@@ -90,6 +159,7 @@ router.post("/", async (req, res) => {
     ephemeral?: unknown;
     agentName?: unknown;
     personalization?: unknown;
+    sessionDirectory?: unknown;
   };
   const ephemeral = body.ephemeral === true;
   const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
@@ -164,14 +234,23 @@ router.post("/", async (req, res) => {
     }
   });
 
+  let persistedSession: SessionRow | null = null;
+  if (!ephemeral) {
+    persistedSession = getSessionById(sessionId);
+  }
+
   let chatAgentName: string;
   if (ephemeral) {
     const rawAgent = typeof body.agentName === "string" ? body.agentName.trim() : "";
     chatAgentName = (rawAgent && getAgentByName(rawAgent)) ? rawAgent : resolveSessionAgentName(null);
   } else {
-    const sessionRow = getSessionById(sessionId);
-    chatAgentName = resolveSessionAgentName(sessionRow);
+    chatAgentName = resolveSessionAgentName(persistedSession);
   }
+
+  const toolSessionDir = resolveEffectiveToolSessionDir(
+    body.sessionDirectory,
+    persistedSession?.session_directory,
+  );
 
   const agentRow = getAgentByName(chatAgentName);
   let personalizationBlock: string | undefined;
@@ -192,6 +271,7 @@ router.post("/", async (req, res) => {
     model,
     agentName: chatAgentName,
     personalizationBlock,
+    toolSessionDir,
   });
   session.restoreFromPersistence({
     history: body.history as { role: string; content: string; steps?: HistoryWireStep[] }[],

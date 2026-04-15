@@ -4,6 +4,8 @@ export type AgentData = {
   description: string;
   system_prompt: string;
   include_personalization: number;
+  include_session_directory: number;
+  include_os_info: number;
   is_default: number;
   tools: string[];
   created_at: number;
@@ -29,6 +31,8 @@ export async function createAgentApi(body: {
   system_prompt: string;
   tools: string[];
   include_personalization: number;
+  include_session_directory: number;
+  include_os_info: number;
 }): Promise<AgentData> {
   const res = await fetch("/api/agents", {
     method: "POST",
@@ -50,6 +54,8 @@ export async function updateAgentApi(
     system_prompt: string;
     tools: string[];
     include_personalization: number;
+    include_session_directory: number;
+    include_os_info: number;
   },
 ): Promise<void> {
   const res = await fetch(`/api/agents/${id}`, {

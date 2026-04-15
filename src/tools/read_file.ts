@@ -1,6 +1,8 @@
 import type { Tool } from "ollama";
 import { BaseTool } from "./BaseTool";
-import fs from 'fs/promises';
+import fs from "fs/promises";
+import type { RunContext } from "../RunContext";
+import { resolveToolFilePath } from "../sessionDirectory";
 
 export class ReadFileTool extends BaseTool {
   constructor() {
@@ -25,15 +27,16 @@ export class ReadFileTool extends BaseTool {
     };
   }
 
-  override async execute(args: Record<string, unknown>): Promise<string> {
-    const path =
-      typeof args.path === 'string' && args.path.length > 0
+  override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
+    const rawPath =
+      typeof args.path === "string" && args.path.length > 0
         ? args.path
-        : typeof args.filename === 'string' && args.filename.length > 0
+        : typeof args.filename === "string" && args.filename.length > 0
           ? args.filename
-          : '';
+          : "";
+    const path = resolveToolFilePath(rawPath, ctx?.sessionDir);
     if (!path) {
-      return 'Error: missing path (provide path or filename)';
+      return "Error: missing path (provide path or filename)";
     }
     try {
       const content = await fs.readFile(path, 'utf8');

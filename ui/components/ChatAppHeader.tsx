@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Bug, Check, Copy, EyeOff, PanelLeft, X } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Bug, Check, Copy, EyeOff, Folder, FolderOpen, PanelLeft, X } from "lucide-react";
 import { ModelSelectBar } from "./ModelSelectBar";
 import { AgentSelectBar } from "./AgentSelectBar";
 import { cx, iconButton } from "../styles";
@@ -19,10 +19,135 @@ type ChatAppHeaderProps = {
   headerChatBusy: boolean;
   debugOpen: boolean;
   onToggleDebug: () => void;
-  /** Copy full transcript (USER/MODEL blocks); return whether clipboard write succeeded. */
   onCopyEntireChat?: () => Promise<boolean>;
   isEphemeral?: boolean;
+  sessionDirectory?: string;
+  onSessionDirectoryDraft?: (value: string) => void;
+  onSessionDirectoryPersist?: () => void | Promise<void>;
 };
+
+/* ------------------------------------------------------------------ */
+/*  Folder picker popover                                             */
+/* ------------------------------------------------------------------ */
+
+function FolderPickerButton({
+  sessionDirectory = "",
+  onSessionDirectoryDraft,
+  onSessionDirectoryPersist,
+  disabled,
+}: {
+  sessionDirectory?: string;
+  onSessionDirectoryDraft: (value: string) => void;
+  onSessionDirectoryPersist: () => void | Promise<void>;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pickingFolder, setPickingFolder] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const dirTrimmed = sessionDirectory.trim();
+  const hasDir = dirTrimmed.length > 0;
+  const normalizedPath = dirTrimmed.replace(/\\/g, "/");
+  const folderBasename =
+    normalizedPath.length > 0
+      ? (normalizedPath.split("/").filter(Boolean).pop() ?? dirTrimmed)
+      : "";
+
+  const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [open, close]);
+
+  const pickFolder = async () => {
+    setPickingFolder(true);
+    try {
+      const res = await fetch("/api/sessions/pick-directory", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { path?: string | null; error?: string };
+      if (!res.ok) { window.alert(typeof data.error === "string" ? data.error : res.statusText); return; }
+      if (typeof data.path === "string" && data.path.trim().length > 0) {
+        onSessionDirectoryDraft(data.path.trim());
+        await onSessionDirectoryPersist();
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not pick folder");
+    } finally {
+      setPickingFolder(false);
+    }
+  };
+
+  const clearFolder = async () => {
+    onSessionDirectoryDraft("");
+    await onSessionDirectoryPersist();
+    close();
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        disabled={disabled || pickingFolder}
+        onClick={() => hasDir ? setOpen((v) => !v) : void pickFolder()}
+        title={hasDir ? folderBasename : "Set working directory"}
+        aria-label={hasDir ? `Working directory: ${folderBasename}` : "Set working directory"}
+        className={cx(
+          "relative inline-flex items-center gap-1.5 rounded-lg border bg-transparent px-2 py-1.5 text-[0.75rem] font-medium transition-[color,background-color,border-color,transform] duration-150 ease-out active:scale-[0.97]",
+          hasDir
+            ? "border-border-subtle text-foreground hover:border-border hover:bg-muted"
+            : "border-transparent text-muted-foreground/70 hover:border-border-subtle hover:bg-muted/50 hover:text-muted-foreground",
+          (disabled || pickingFolder) && "pointer-events-none opacity-50",
+        )}
+      >
+        {hasDir ? <Folder size={14} /> : <FolderOpen size={14} />}
+        {hasDir && (
+          <span className="max-w-[5rem] truncate sm:max-w-[7rem]">
+            {pickingFolder ? "…" : folderBasename}
+          </span>
+        )}
+      </button>
+
+      {open && hasDir && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-64 origin-top-right animate-[popover-in_120ms_ease-out] rounded-xl border border-border-subtle bg-surface p-3 shadow-xl shadow-black/30">
+          <p className="mb-0.5 text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground/70">
+            Working directory
+          </p>
+          <p className="break-all text-[0.8rem] leading-snug text-foreground/90" title={dirTrimmed}>
+            {dirTrimmed}
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              disabled={pickingFolder}
+              onClick={() => void pickFolder()}
+              className="flex-1 rounded-lg border border-border-subtle bg-transparent px-2 py-1.5 text-[0.75rem] font-medium text-muted-foreground transition-colors duration-150 hover:border-border hover:bg-muted hover:text-foreground"
+            >
+              Change
+            </button>
+            <button
+              type="button"
+              disabled={pickingFolder}
+              onClick={() => void clearFolder()}
+              className="flex-1 rounded-lg border border-border-subtle bg-transparent px-2 py-1.5 text-[0.75rem] font-medium text-muted-foreground transition-colors duration-150 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Header                                                            */
+/* ------------------------------------------------------------------ */
 
 export function ChatAppHeader({
   activeSessionId,
@@ -40,6 +165,9 @@ export function ChatAppHeader({
   onToggleDebug,
   onCopyEntireChat,
   isEphemeral,
+  sessionDirectory = "",
+  onSessionDirectoryDraft,
+  onSessionDirectoryPersist,
 }: ChatAppHeaderProps) {
   const [chatCopied, setChatCopied] = useState(false);
 
@@ -96,6 +224,14 @@ export function ChatAppHeader({
         )}
       </div>
       <div className="pointer-events-auto flex shrink-0 items-center gap-1">
+        {activeSessionId && onSessionDirectoryDraft && onSessionDirectoryPersist && (
+          <FolderPickerButton
+            sessionDirectory={sessionDirectory}
+            onSessionDirectoryDraft={onSessionDirectoryDraft}
+            onSessionDirectoryPersist={onSessionDirectoryPersist}
+            disabled={headerChatBusy}
+          />
+        )}
         {activeSessionId && onCopyEntireChat && (
           <button
             type="button"

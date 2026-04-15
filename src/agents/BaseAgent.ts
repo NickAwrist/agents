@@ -23,6 +23,8 @@ export class BaseAgent {
     model?: string,
     systemPrompt?: string,
     personalizationBlock?: string | null,
+    sessionContextBlock?: string | null,
+    osContextBlock?: string | null,
   ) {
     this.name = name;
     this.description = description;
@@ -32,7 +34,9 @@ export class BaseAgent {
     const gemmaWarning = "CRITICAL INSTRUCTION: When calling tools, strictly output standard JSON. Do NOT use custom delimiters like <|\"|>. If an argument requires multiple lines (e.g. file contents or code), carefully escape your newlines with \\n, OR preferably use an array of strings if the tool provides a lines property.\n\nCRITICAL DIRECTIVE: You are an agent designed to take action. If you formulate a plan or decide on next steps, you MUST IMMEDIATELY use a tool call to execute the first step of your plan. NEVER stop your response after just outputting a plan or a thought. Your reply must almost always conclude with a tool call unless the entire task is fully completed.";
     const base = typeof systemPrompt === "string" ? systemPrompt.trim() : "";
     const p = typeof personalizationBlock === "string" ? personalizationBlock.trim() : "";
-    const core = [base, p].filter((s) => s.length > 0).join("\n\n");
+    const sd = typeof sessionContextBlock === "string" ? sessionContextBlock.trim() : "";
+    const oi = typeof osContextBlock === "string" ? osContextBlock.trim() : "";
+    const core = [base, p, sd, oi].filter((s) => s.length > 0).join("\n\n");
     this.systemPrompt = core ? core + "\n\n" + gemmaWarning : gemmaWarning;
 
     this.history = [];

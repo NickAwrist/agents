@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run dev:server & bun run dev:ui",
+    "dev": "concurrently -k \"bun run dev:server\" \"bun run dev:ui\"",
     "dev:server": "bun run --hot src/server.ts",
     "dev:ui": "vite"
   },
@@ -15,20 +15,21 @@
     "@types/express": "^5.0.6",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
     "tailwindcss": "^4.2.2",
-    "vite": "^8.0.3"
+    "vite": "^8.0.8"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "ignore": "^7.0.5",
-    "lucide-react": "^1.7.0",
+    "lucide-react": "^1.8.0",
     "ollama": "^0.6.3",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
     "rehype-pretty-code": "^0.14.3",
     "remark-gfm": "^4.0.1",

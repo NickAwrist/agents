@@ -1,7 +1,8 @@
-import { BaseTool } from "./BaseTool";
-import type { Tool } from "ollama";
-import type { RunContext } from "../RunContext";
+import { homedir } from "node:os";
 import { exec } from "child_process";
+import type { Tool } from "ollama";
+import { BaseTool } from "./BaseTool";
+import type { RunContext } from "../RunContext";
 import { promisify } from "util";
 
 const execAsync = promisify(exec);
@@ -27,8 +28,9 @@ export class RunTscTool extends BaseTool {
   }
 
   override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
+    const cwd = ctx?.sessionDir?.trim() || homedir();
     try {
-      const { stdout, stderr } = await execAsync("npx tsc --noEmit");
+      const { stdout, stderr } = await execAsync("npx tsc --noEmit", { cwd });
       let output = stdout || stderr;
       if (output.trim() === "") {
          return "No type errors found! Compilation successful.";
