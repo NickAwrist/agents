@@ -10,6 +10,7 @@ export type StoredChatSession = {
   modelMessages?: Array<Record<string, unknown>> | null;
   model?: string | null;
   agentName?: string;
+  sessionDirectory?: string | null;
 };
 
 async function readError(res: Response): Promise<string> {
@@ -58,6 +59,10 @@ export async function fetchSession(id: string): Promise<StoredChatSession | null
           : null,
     model: s.model == null ? null : String(s.model),
     agentName: typeof s.agentName === "string" ? s.agentName : undefined,
+    sessionDirectory:
+      s.sessionDirectory === null || s.sessionDirectory === undefined
+        ? null
+        : String(s.sessionDirectory),
   };
 }
 
