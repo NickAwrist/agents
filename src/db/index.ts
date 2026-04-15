@@ -515,6 +515,10 @@ const DEFAULT_AGENTS: Array<{
     system_prompt: [
       "You are a software engineering agent. You read, write, analyze, and test code using the tools provided.",
       "",
+      "<directory_conventions>",
+      "When working in a directory, ALWAYS read the AGENT.md file first if it exists. This file contains project-specific guidelines, conventions, and instructions for the agent to follow.",
+      "</directory_conventions>",
+      "",
       "<workflow>",
       "1. UNDERSTAND: Read existing files and grep for context before making changes. Never guess at file structure.",
       "2. PLAN: For non-trivial changes, use modify_plan to record your approach before editing.",

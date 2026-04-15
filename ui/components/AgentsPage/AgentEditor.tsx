@@ -103,8 +103,7 @@ export function AgentEditor({
           <span className="text-[0.8125rem] leading-snug text-foreground">
             <span className="font-medium">Include personalization</span>
             <span className="mt-0.5 block text-[0.75rem] font-normal text-muted-foreground">
-              When enabled, this chat agent receives your name, location, and preferred response format from Settings (not
-              subagents).
+              When enabled, this chat agent receives your name, location, and preferred response format from Settings.
             </span>
           </span>
         </label>
@@ -137,7 +136,7 @@ export function AgentEditor({
           <span className="text-[0.8125rem] leading-snug text-foreground">
             <span className="font-medium">Include OS info</span>
             <span className="mt-0.5 block text-[0.75rem] font-normal text-muted-foreground">
-              When enabled, this agent receives the auto-detected server OS (platform/arch/release) in its system prompt.
+              When enabled, this agent receives the auto-detected server OS in its system prompt.
             </span>
           </span>
         </label>

@@ -13,6 +13,20 @@ export function formatPersonalizationBlock(fields: PersonalizationFields): strin
   if (name) lines.push(`User name: ${name}`);
   if (location) lines.push(`Location: ${location}`);
   if (preferredFormats) lines.push(`Preferred response format: ${preferredFormats}`);
-  if (lines.length === 0) return null;
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const timeStr = now.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  lines.push(`Current date and time: ${dateStr}, ${timeStr}`);
+
   return ["--- User personalization ---", ...lines].join("\n");
 }
