@@ -1,9 +1,9 @@
 import { execFile as execFileCb } from "node:child_process";
-import { promisify } from "node:util";
-import { writeFile, unlink } from "node:fs/promises";
+import { unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { promisify } from "node:util";
 
 const execFile = promisify(execFileCb);
 
@@ -31,13 +31,23 @@ Write-Output $dialog.SelectedPath
 exit 0
 `.trim();
 
-  const scriptPath = join(tmpdir(), `pick-folder-${process.pid}-${Date.now()}.ps1`);
+  const scriptPath = join(
+    tmpdir(),
+    `pick-folder-${process.pid}-${Date.now()}.ps1`,
+  );
   await writeFile(scriptPath, script, "utf8");
   try {
     try {
       const { stdout } = await execFile(
         "powershell.exe",
-        ["-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
+        [
+          "-NoProfile",
+          "-STA",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          scriptPath,
+        ],
         {
           encoding: "utf8",
           windowsHide: false,

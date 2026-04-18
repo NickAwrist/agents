@@ -1,19 +1,13 @@
 import {
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
 } from "react";
-import type {
-  DebugData,
-  Message,
-  SessionSummary,
-  TraceModalSelection,
-  TruncateConfirmState,
-} from "../../types";
+import { fetchDefaultChatAgent } from "../../persist/agents";
 import {
   createSessionApi,
   deleteSessionApi,
@@ -21,12 +15,21 @@ import {
   fetchSessionSummaries,
   patchSessionApi,
 } from "../../persist/sessions";
-import { fetchDefaultChatAgent } from "../../persist/agents";
 import type { UserSettings } from "../../persist/userSettings";
-import type { OllamaModelOption } from "../../types";
 import { loadUserSettings } from "../../persist/userSettings";
-import { effectiveDefaultChatModel, newEphemeralSessionId } from "./sessionUtils";
-import type { ChatFlightApi } from "./useChatStreaming";
+import type {
+  DebugData,
+  Message,
+  SessionSummary,
+  TraceModalSelection,
+  TruncateConfirmState,
+} from "../../types";
+import type { OllamaModelOption } from "../../types";
+import type { ChatFlightApi } from "./chatTypes";
+import {
+  effectiveDefaultChatModel,
+  newEphemeralSessionId,
+} from "./sessionUtils";
 
 const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
 const CHAT_PATH_PREFIX = "/chat/";
@@ -78,17 +81,22 @@ type Args = {
 
 export function useSessionsAndNavigation(p: Args) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionIdFromUrl);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(
+    sessionIdFromUrl,
+  );
   const [isEphemeral, setIsEphemeral] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
-  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<
+    string | null
+  >(null);
   const [selectedModel, setSelectedModel] = useState(() =>
     effectiveDefaultChatModel(loadUserSettings(), "gemma4:e4b"),
   );
-  const [selectedSessionAgent, setSelectedSessionAgent] = useState("general_agent");
+  const [selectedSessionAgent, setSelectedSessionAgent] =
+    useState("general_agent");
   const [sessionDirectory, setSessionDirectory] = useState("");
   const sessionDirectoryRef = useRef("");
 
@@ -114,7 +122,10 @@ export function useSessionsAndNavigation(p: Args) {
     if (!activeSessionId) return;
     if (isEphemeral) {
       const names = new Set(p.ollamaModels.map((m) => m.name));
-      const pref = effectiveDefaultChatModel(p.userSettingsRef.current, p.serverDefaultModel);
+      const pref = effectiveDefaultChatModel(
+        p.userSettingsRef.current,
+        p.serverDefaultModel,
+      );
       let next = pref;
       if (names.size > 0 && !names.has(next)) {
         next = names.has(p.serverDefaultModel)
@@ -130,7 +141,10 @@ export function useSessionsAndNavigation(p: Args) {
       if (cancelled) return;
       const preference =
         stored?.model?.trim() ||
-        effectiveDefaultChatModel(p.userSettingsRef.current, p.serverDefaultModel);
+        effectiveDefaultChatModel(
+          p.userSettingsRef.current,
+          p.serverDefaultModel,
+        );
       const names = new Set(p.ollamaModels.map((m) => m.name));
       let next = preference;
       if (names.size > 0 && !names.has(next)) {
@@ -140,9 +154,12 @@ export function useSessionsAndNavigation(p: Args) {
       }
       setSelectedModel(next);
       const an = stored?.agentName?.trim();
-      setSelectedSessionAgent(an && an.length > 0 ? an : p.serverDefaultChatAgent);
+      setSelectedSessionAgent(
+        an && an.length > 0 ? an : p.serverDefaultChatAgent,
+      );
       const sd =
-        stored?.sessionDirectory != null && String(stored.sessionDirectory).trim()
+        stored?.sessionDirectory != null &&
+        String(stored.sessionDirectory).trim()
           ? String(stored.sessionDirectory).trim()
           : "";
       setSessionDirectory(sd);
@@ -188,7 +205,9 @@ export function useSessionsAndNavigation(p: Args) {
     if (!sid) return;
     const trimmed = sessionDirectoryRef.current.trim();
     try {
-      await patchSessionApi(sid, { sessionDirectory: trimmed.length > 0 ? trimmed : null });
+      await patchSessionApi(sid, {
+        sessionDirectory: trimmed.length > 0 ? trimmed : null,
+      });
       await refreshSessions();
     } catch (e) {
       console.error(e);
@@ -227,7 +246,8 @@ export function useSessionsAndNavigation(p: Args) {
           if (gen !== loadGenRef.current) return;
           p.modelMessagesRef.current = stored?.modelMessages ?? null;
           const sd =
-            stored?.sessionDirectory != null && String(stored.sessionDirectory).trim()
+            stored?.sessionDirectory != null &&
+            String(stored.sessionDirectory).trim()
               ? String(stored.sessionDirectory).trim()
               : "";
           setSessionDirectory(sd);
@@ -251,7 +271,8 @@ export function useSessionsAndNavigation(p: Args) {
         if (stored?.history?.length) p.setMessages(stored.history);
         p.modelMessagesRef.current = stored?.modelMessages ?? null;
         const sd =
-          stored?.sessionDirectory != null && String(stored.sessionDirectory).trim()
+          stored?.sessionDirectory != null &&
+          String(stored.sessionDirectory).trim()
             ? String(stored.sessionDirectory).trim()
             : "";
         setSessionDirectory(sd);
@@ -262,9 +283,14 @@ export function useSessionsAndNavigation(p: Args) {
       }
 
       try {
-        const statusRes = await fetch(`/api/chat/active/${encodeURIComponent(id)}`);
+        const statusRes = await fetch(
+          `/api/chat/active/${encodeURIComponent(id)}`,
+        );
         if (gen !== loadGenRef.current) return;
-        const status = (await statusRes.json()) as { active?: boolean; requestId?: string };
+        const status = (await statusRes.json()) as {
+          active?: boolean;
+          requestId?: string;
+        };
         if (status.active && status.requestId) {
           p.chatFlightRef.current?.reconnectToStream(id, status.requestId);
         }
@@ -289,7 +315,8 @@ export function useSessionsAndNavigation(p: Args) {
         await refreshSessions();
         if (cancelled) return;
         const restoredId =
-          sessionIdFromUrl() || sessionStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+          sessionIdFromUrl() ||
+          sessionStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
         if (restoredId) {
           const stored = await fetchSession(restoredId);
           if (cancelled) return;
@@ -338,7 +365,13 @@ export function useSessionsAndNavigation(p: Args) {
       pushSessionUrl(id);
       await loadSession(id);
     },
-    [loadSession, p.activeSessionIdRef, p.isEphemeralRef, p.messages.length, refreshSessions],
+    [
+      loadSession,
+      p.activeSessionIdRef,
+      p.isEphemeralRef,
+      p.messages.length,
+      refreshSessions,
+    ],
   );
 
   const createSession = useCallback(async () => {
@@ -361,7 +394,10 @@ export function useSessionsAndNavigation(p: Args) {
         /* use last known */
       }
       const names = new Set(p.ollamaModels.map((m) => m.name));
-      let modelForNew = effectiveDefaultChatModel(p.userSettingsRef.current, p.serverDefaultModel);
+      let modelForNew = effectiveDefaultChatModel(
+        p.userSettingsRef.current,
+        p.serverDefaultModel,
+      );
       if (names.size > 0 && !names.has(modelForNew)) {
         modelForNew = names.has(p.serverDefaultModel)
           ? p.serverDefaultModel
@@ -457,7 +493,13 @@ export function useSessionsAndNavigation(p: Args) {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [loadSession, p.setMessages, p.resetStreamingUi, p.setEditingUserIndex, p.setTruncateConfirm]);
+  }, [
+    loadSession,
+    p.setMessages,
+    p.resetStreamingUi,
+    p.setEditingUserIndex,
+    p.setTruncateConfirm,
+  ]);
 
   const goToHome = useCallback(async () => {
     const curId = p.activeSessionIdRef.current;
@@ -578,8 +620,12 @@ export function useSessionsAndNavigation(p: Args) {
     [refreshSessions, renameSessionId],
   );
 
-  const renameTarget = renameSessionId ? sessions.find((s) => s.id === renameSessionId) : null;
-  const sidebarCols = sidebarCollapsed ? "72px minmax(0, 1fr)" : "260px minmax(0, 1fr)";
+  const renameTarget = renameSessionId
+    ? sessions.find((s) => s.id === renameSessionId)
+    : null;
+  const sidebarCols = sidebarCollapsed
+    ? "72px minmax(0, 1fr)"
+    : "260px minmax(0, 1fr)";
 
   return {
     sessions,

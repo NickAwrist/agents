@@ -1,15 +1,15 @@
+import { exec } from "node:child_process";
 import { homedir } from "node:os";
-import { exec } from "child_process";
+import { promisify } from "node:util";
 import type { Tool } from "ollama";
-import { BaseTool } from "./BaseTool";
 import type { RunContext } from "../RunContext";
-import { promisify } from "util";
+import { BaseTool } from "./BaseTool";
 
 const execAsync = promisify(exec);
 
 export class RunTscTool extends BaseTool {
   constructor() {
-    super('run_tsc', 'Run the typescript compiler to check for type errors.');
+    super("run_tsc", "Run the typescript compiler to check for type errors.");
   }
 
   override toTool(): Tool {
@@ -27,19 +27,23 @@ export class RunTscTool extends BaseTool {
     };
   }
 
-  override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
+  override async execute(
+    args: Record<string, unknown>,
+    ctx?: RunContext,
+  ): Promise<string> {
     const cwd = ctx?.sessionDir?.trim() || homedir();
     try {
       const { stdout, stderr } = await execAsync("npx tsc --noEmit", { cwd });
-      let output = stdout || stderr;
+      const output = stdout || stderr;
       if (output.trim() === "") {
-         return "No type errors found! Compilation successful.";
+        return "No type errors found! Compilation successful.";
       }
       return output;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // exec throws if tsc exits with a non-zero code (errors found)
-      let output = error.stdout || error.stderr || error.message;
-      return output.trim() ? output : "Error running tsc (no output)";
+      const e = error as { stdout?: string; stderr?: string; message?: string };
+      const output = e.stdout || e.stderr || e.message;
+      return output?.trim() ? output : "Error running tsc (no output)";
     }
   }
 }

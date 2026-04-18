@@ -12,7 +12,9 @@ export function useOllamaConnection() {
   const fetchOllamaHealth = useCallback(async () => {
     try {
       const res = await fetch("/api/ollama/health");
-      const data = (await res.json().catch(() => ({}))) as { connected?: boolean };
+      const data = (await res.json().catch(() => ({}))) as {
+        connected?: boolean;
+      };
       if (!res.ok) {
         setOllamaConnected(false);
         return;
@@ -25,7 +27,10 @@ export function useOllamaConnection() {
 
   useEffect(() => {
     void fetchOllamaHealth();
-    const id = window.setInterval(() => void fetchOllamaHealth(), OLLAMA_HEALTH_POLL_MS);
+    const id = window.setInterval(
+      () => void fetchOllamaHealth(),
+      OLLAMA_HEALTH_POLL_MS,
+    );
     return () => window.clearInterval(id);
   }, [fetchOllamaHealth]);
 
@@ -42,14 +47,19 @@ export function useOllamaConnection() {
         error?: string;
       };
       if (!res.ok) {
-        setModelsLoadError(typeof data.error === "string" ? data.error : res.statusText);
+        setModelsLoadError(
+          typeof data.error === "string" ? data.error : res.statusText,
+        );
         setOllamaModels([]);
         return;
       }
       setModelsLoadError(null);
       const raw = Array.isArray(data.models) ? data.models : [];
       const list: OllamaModelOption[] = raw
-        .filter((m): m is Record<string, unknown> => m != null && typeof m === "object")
+        .filter(
+          (m): m is Record<string, unknown> =>
+            m != null && typeof m === "object",
+        )
         .map((m) => m.name)
         .filter((n): n is string => typeof n === "string" && n.length > 0)
         .map((name) => ({ name }));

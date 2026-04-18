@@ -1,46 +1,31 @@
-import { Router, type Response } from "express";
-import crypto from "crypto";
-import type { HistoryWireStep } from "../session/AgentSession";
-import { AgentSession } from "../session/AgentSession";
+import crypto from "node:crypto";
+import { type Response, Router } from "express";
 import {
-  getAgentByName,
-  getSessionById,
-  replaceSessionMessages,
-  resolveSessionAgentName,
+  resolveChatAgentName,
+  resolvePersonalizationBlock,
+  resolveToolSessionDirFromBody,
+} from "../chat/resolveTurnContext";
+import type { ActiveGeneration } from "../chat/sseStream";
+import { broadcastSse, writeSse } from "../chat/sseStream";
+import { DEFAULT_CHAT_MODEL } from "../constants";
+import {
   type SessionRow,
   type WireMessage,
+  getAgentByName,
+  getSessionById,
+  persistSessionMessages,
+  resolveSessionAgentName,
 } from "../db/index";
-import { resolveEffectiveToolSessionDir } from "../sessionDirectory";
-import { formatPersonalizationBlock } from "../personalization";
-import { DEFAULT_CHAT_MODEL } from "../constants";
+import { logger } from "../logger";
+import type { HistoryWireStep } from "../session/AgentSession";
+import { AgentSession } from "../session/AgentSession";
 
 const router = Router();
+const log = logger.child({ route: "chat" });
 
 const activeRequests = new Map<string, AbortController>();
-
-type ActiveGeneration = {
-  requestId: string;
-  sessionId: string;
-  abortController: AbortController;
-  eventBuffer: Array<Record<string, unknown>>;
-  clients: Set<Response>;
-  orphanTimer: ReturnType<typeof setTimeout> | null;
-};
-
 const activeGenerationsBySession = new Map<string, ActiveGeneration>();
 const ORPHAN_TIMEOUT_MS = 5 * 60 * 1000;
-
-function writeSse(res: Response, payload: Record<string, unknown>) {
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
-}
-
-function broadcastSse(gen: ActiveGeneration, payload: Record<string, unknown>) {
-  gen.eventBuffer.push(payload);
-  const data = `data: ${JSON.stringify(payload)}\n\n`;
-  for (const client of gen.clients) {
-    try { client.write(data); } catch { /* client gone */ }
-  }
-}
 
 function startOrphanTimer(gen: ActiveGeneration) {
   if (gen.orphanTimer) clearTimeout(gen.orphanTimer);
@@ -82,7 +67,6 @@ router.post("/abort-session/:sessionId", (req, res) => {
   res.json({ aborted: true });
 });
 
-/** Same system prompt assembly as a live chat turn (personalization, session dir, OS, model warnings). */
 router.post("/debug-prompt", (req, res) => {
   const body = req.body as {
     sessionId?: unknown;
@@ -92,7 +76,8 @@ router.post("/debug-prompt", (req, res) => {
     sessionDirectory?: unknown;
   };
   const ephemeral = body.ephemeral === true;
-  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+  const sessionId =
+    typeof body.sessionId === "string" ? body.sessionId.trim() : "";
 
   let persistedSession: SessionRow | null = null;
   if (!ephemeral) {
@@ -107,17 +92,14 @@ router.post("/debug-prompt", (req, res) => {
     }
   }
 
-  let chatAgentName: string;
-  if (ephemeral) {
-    const rawAgent = typeof body.agentName === "string" ? body.agentName.trim() : "";
-    chatAgentName = rawAgent && getAgentByName(rawAgent) ? rawAgent : resolveSessionAgentName(null);
-  } else {
-    chatAgentName = resolveSessionAgentName(persistedSession);
-  }
-
-  const toolSessionDir = resolveEffectiveToolSessionDir(
+  const chatAgentName = resolveChatAgentName(
+    ephemeral,
+    body.agentName,
+    persistedSession,
+  );
+  const toolSessionDir = resolveToolSessionDirFromBody(
     body.sessionDirectory,
-    persistedSession?.session_directory,
+    persistedSession,
   );
 
   const agentRow = getAgentByName(chatAgentName);
@@ -126,19 +108,10 @@ router.post("/debug-prompt", (req, res) => {
     return;
   }
 
-  let personalizationBlock: string | undefined;
-  if (agentRow.include_personalization) {
-    const raw = body.personalization;
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      const o = raw as Record<string, unknown>;
-      const block = formatPersonalizationBlock({
-        name: typeof o.name === "string" ? o.name : "",
-        location: typeof o.location === "string" ? o.location : "",
-        preferredFormats: typeof o.preferredFormats === "string" ? o.preferredFormats : "",
-      });
-      if (block) personalizationBlock = block;
-    }
-  }
+  const personalizationBlock = resolvePersonalizationBlock(
+    agentRow,
+    body.personalization,
+  );
 
   const session = new AgentSession(crypto.randomUUID(), {
     model: DEFAULT_CHAT_MODEL,
@@ -162,7 +135,8 @@ router.post("/", async (req, res) => {
     sessionDirectory?: unknown;
   };
   const ephemeral = body.ephemeral === true;
-  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+  const sessionId =
+    typeof body.sessionId === "string" ? body.sessionId.trim() : "";
 
   if (!ephemeral) {
     if (!sessionId) {
@@ -191,10 +165,11 @@ router.post("/", async (req, res) => {
   res.flushHeaders();
 
   const pingInterval = setInterval(() => {
-    res.write(`:\n\n`);
+    res.write(":\n\n");
   }, 15000);
 
-  const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
+  const requestedModel =
+    typeof body.model === "string" ? body.model.trim() : "";
   const model = requestedModel || DEFAULT_CHAT_MODEL;
 
   const requestId = crypto.randomUUID();
@@ -218,7 +193,13 @@ router.post("/", async (req, res) => {
     if (prev) {
       prev.abortController.abort();
       clearOrphanTimer(prev);
-      for (const c of prev.clients) { try { c.end(); } catch {} }
+      for (const c of prev.clients) {
+        try {
+          c.end();
+        } catch (err) {
+          log.debug({ err }, "sse end prev client");
+        }
+      }
     }
     activeGenerationsBySession.set(sessionId, gen);
   }
@@ -239,33 +220,21 @@ router.post("/", async (req, res) => {
     persistedSession = getSessionById(sessionId);
   }
 
-  let chatAgentName: string;
-  if (ephemeral) {
-    const rawAgent = typeof body.agentName === "string" ? body.agentName.trim() : "";
-    chatAgentName = (rawAgent && getAgentByName(rawAgent)) ? rawAgent : resolveSessionAgentName(null);
-  } else {
-    chatAgentName = resolveSessionAgentName(persistedSession);
-  }
-
-  const toolSessionDir = resolveEffectiveToolSessionDir(
+  const chatAgentName = resolveChatAgentName(
+    ephemeral,
+    body.agentName,
+    persistedSession,
+  );
+  const toolSessionDir = resolveToolSessionDirFromBody(
     body.sessionDirectory,
-    persistedSession?.session_directory,
+    persistedSession,
   );
 
   const agentRow = getAgentByName(chatAgentName);
-  let personalizationBlock: string | undefined;
-  if (agentRow && agentRow.include_personalization) {
-    const raw = body.personalization;
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      const o = raw as Record<string, unknown>;
-      const block = formatPersonalizationBlock({
-        name: typeof o.name === "string" ? o.name : "",
-        location: typeof o.location === "string" ? o.location : "",
-        preferredFormats: typeof o.preferredFormats === "string" ? o.preferredFormats : "",
-      });
-      if (block) personalizationBlock = block;
-    }
-  }
+  const personalizationBlock = resolvePersonalizationBlock(
+    agentRow,
+    body.personalization,
+  );
 
   const session = new AgentSession(crypto.randomUUID(), {
     model,
@@ -274,7 +243,11 @@ router.post("/", async (req, res) => {
     toolSessionDir,
   });
   session.restoreFromPersistence({
-    history: body.history as { role: string; content: string; steps?: HistoryWireStep[] }[],
+    history: body.history as {
+      role: string;
+      content: string;
+      steps?: HistoryWireStep[];
+    }[],
     modelMessages: body.modelMessages,
   });
 
@@ -291,15 +264,30 @@ router.post("/", async (req, res) => {
       ...(body.history as WireMessage[]),
       { role: "user" as const, content: message },
     ];
-    replaceSessionMessages(sessionId, pendingHistory, body.modelMessages ?? null, Date.now(), model);
+    persistSessionMessages(
+      sessionId,
+      pendingHistory,
+      body.modelMessages ?? null,
+      Date.now(),
+      model,
+    );
   }
 
   safeSse({ type: "chat_started", requestId });
 
   const persistTurn = ephemeral
     ? () => {}
-    : (hist: WireMessage[], modelMessages: Array<Record<string, unknown>> | null) => {
-        replaceSessionMessages(sessionId, hist, modelMessages, Date.now(), model);
+    : (
+        hist: WireMessage[],
+        modelMessages: Array<Record<string, unknown>> | null,
+      ) => {
+        persistSessionMessages(
+          sessionId,
+          hist,
+          modelMessages,
+          Date.now(),
+          model,
+        );
       };
 
   const onStep = (payload: unknown) => {
@@ -331,7 +319,8 @@ router.post("/", async (req, res) => {
       const lastMsg = session.history[session.history.length - 1];
       const stepsSnapshot = lastMsg?.steps || [];
       const modelMessages = session.getModelMessagesForDebug();
-      if (!ephemeral) persistTurn(session.history as WireMessage[], modelMessages);
+      if (!ephemeral)
+        persistTurn(session.history as WireMessage[], modelMessages);
       safeSse({
         type: "chat_done",
         result,
@@ -342,6 +331,7 @@ router.post("/", async (req, res) => {
     }
   } catch (e) {
     if (!abortController.signal.aborted) {
+      log.error({ err: e }, "chat turn failed");
       safeSse({
         type: "error",
         error: e instanceof Error ? e.message : String(e),
@@ -357,7 +347,11 @@ router.post("/", async (req, res) => {
       clearOrphanTimer(gen);
       activeGenerationsBySession.delete(sessionId);
       for (const c of gen.clients) {
-        try { c.end(); } catch {}
+        try {
+          c.end();
+        } catch (err) {
+          log.debug({ err }, "sse end client");
+        }
       }
     } else if (!clientDisconnected) {
       res.end();
@@ -395,7 +389,9 @@ router.get("/stream/:sessionId", (req, res) => {
   gen.clients.add(res);
   clearOrphanTimer(gen);
 
-  const ping = setInterval(() => { res.write(`:\n\n`); }, 15000);
+  const ping = setInterval(() => {
+    res.write(":\n\n");
+  }, 15000);
 
   res.on("close", () => {
     clearInterval(ping);

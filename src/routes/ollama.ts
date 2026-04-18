@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { Ollama } from "ollama";
-import { getOllamaClient, invalidateOllamaClientCache, getResolvedOllamaHost } from "../ollamaClient";
 import { getOllamaHost, setOllamaHost } from "../db/index";
-import { DEFAULT_CHAT_MODEL } from "../constants";
+import {
+  getOllamaClient,
+  getResolvedOllamaHost,
+  invalidateOllamaClientCache,
+} from "../ollamaClient";
 
 const ollamaRoutes = Router();
 
@@ -49,7 +52,8 @@ ollamaRoutes.post("/test", async (req, res) => {
     });
     return;
   }
-  const effectiveHost = (client as unknown as { config: { host: string } }).config.host;
+  const effectiveHost = (client as unknown as { config: { host: string } })
+    .config.host;
   try {
     const v = await client.version();
     res.json({
@@ -62,30 +66,6 @@ ollamaRoutes.post("/test", async (req, res) => {
       ok: false,
       error: e instanceof Error ? e.message : String(e),
       effectiveHost,
-    });
-  }
-});
-
-export const modelsRoutes = Router();
-
-modelsRoutes.get("/", async (_req, res) => {
-  try {
-    const { models } = await getOllamaClient().list();
-    res.json({
-      defaultModel: DEFAULT_CHAT_MODEL,
-      models: models.map((m) => ({
-        name: m.name,
-        size: m.size,
-        modified_at: m.modified_at instanceof Date ? m.modified_at.toISOString() : String(m.modified_at),
-        digest: m.digest,
-        details: m.details,
-      })),
-    });
-  } catch (e) {
-    res.status(502).json({
-      error: e instanceof Error ? e.message : String(e),
-      defaultModel: DEFAULT_CHAT_MODEL,
-      models: [],
     });
   }
 });

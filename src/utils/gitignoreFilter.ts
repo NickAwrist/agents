@@ -1,32 +1,22 @@
-import fs from "fs/promises";
-import pathModule from "path";
+import fs from "node:fs/promises";
+import pathModule from "node:path";
 import ignore, { type Ignore } from "ignore";
 
-let cachedIg: { dir: string; ig: Ignore } | null = null;
+const cache = new Map<string, { ig: Ignore; mtimeKey: string }>();
 
-/**
- * Walk from `startDir` up to the filesystem root, collecting all `.gitignore`
- * files along the way (child rules first so they override parents).
- * Returns a combined `ignore` instance.
- */
-export async function loadGitignore(startDir?: string): Promise<Ignore> {
-  const dir = startDir ?? process.cwd();
-
-  if (cachedIg && cachedIg.dir === dir) return cachedIg.ig;
-
-  const ig = ignore();
+async function gitignoreMtimeChain(startDir: string): Promise<string> {
   const parts: string[] = [];
-  let current = pathModule.resolve(dir);
+  let current = pathModule.resolve(startDir);
 
   while (true) {
+    const giPath = pathModule.join(current, ".gitignore");
     try {
-      const content = await fs.readFile(pathModule.join(current, ".gitignore"), "utf-8");
-      parts.push(content);
+      const st = await fs.stat(giPath);
+      parts.push(`${giPath}:${st.mtimeMs}`);
     } catch {
-      // no .gitignore at this level
+      parts.push(`${giPath}:none`);
     }
 
-    // stop at git root or filesystem root
     const isGitRoot = await fs
       .stat(pathModule.join(current, ".git"))
       .then(() => true)
@@ -38,12 +28,55 @@ export async function loadGitignore(startDir?: string): Promise<Ignore> {
     current = parent;
   }
 
-  // Apply from root down so child rules layer on top
+  return parts.join("|");
+}
+
+/**
+ * Walk from `startDir` up to the filesystem root, collecting all `.gitignore`
+ * files along the way (child rules first so they override parents).
+ * Returns a combined `ignore` instance. Cached per directory with mtime invalidation.
+ */
+export async function loadGitignore(startDir?: string): Promise<Ignore> {
+  const dir = startDir ?? process.cwd();
+  const resolved = pathModule.resolve(dir);
+
+  const mtimeKey = await gitignoreMtimeChain(resolved);
+  const hit = cache.get(resolved);
+  if (hit && hit.mtimeKey === mtimeKey) {
+    return hit.ig;
+  }
+
+  const ig = ignore();
+  const parts: string[] = [];
+  let current = resolved;
+
+  while (true) {
+    try {
+      const content = await fs.readFile(
+        pathModule.join(current, ".gitignore"),
+        "utf-8",
+      );
+      parts.push(content);
+    } catch {
+      // no .gitignore at this level
+    }
+
+    const isGitRoot = await fs
+      .stat(pathModule.join(current, ".git"))
+      .then(() => true)
+      .catch(() => false);
+    if (isGitRoot) break;
+
+    const parent = pathModule.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
   for (let i = parts.length - 1; i >= 0; i--) {
     ig.add(parts[i]!);
   }
 
-  cachedIg = { dir, ig };
+  cache.set(resolved, { ig, mtimeKey });
   return ig;
 }
 
@@ -56,7 +89,7 @@ function normalizePathTokenForIgnore(
   token: string,
   cwd: string,
 ): string | null {
-  let t = token.trim().replace(/\/+$/, "").replace(/:+$/, "");
+  const t = token.trim().replace(/\/+$/, "").replace(/:+$/, "");
   if (!t) return null;
 
   let abs: string;
@@ -87,7 +120,6 @@ function parseLsDirectoryHeader(trimmed: string): string | null {
   if (!m) return null;
   const p = m[1]!.trim();
   if (!p || p.includes("://")) return null;
-  // `ls -R` headers are single path tokens (no spaces); avoids `error: msg` etc.
   if (p.includes(" ")) return null;
   if (p === ".") return ".";
   if (p.startsWith("./") || p.startsWith("/") || p.includes("/")) {
@@ -181,36 +213,28 @@ export function filterOutputLines(
  * `tree` output, `grep`-style `file:line:` prefixes, etc.
  */
 function extractPathToken(line: string): string | null {
-  // tree-style lines: strip leading box-drawing characters and whitespace
   const treeStripped = line.replace(/^[│├└─┬┤\s|`\\+-]+/, "").trim();
   if (treeStripped && !treeStripped.includes(" ")) {
     return treeStripped.replace(/\/$/, "");
   }
 
-  // grep-style: `path/file:123: content` -> extract path
   const grepMatch = line.match(/^([^\s:]+):\d+:/);
   if (grepMatch) {
     return grepMatch[1]!;
   }
 
-  // ls -l style: last token is the filename
-  // e.g. "drwxr-xr-x  3 user group  4096 Jan  1 00:00 node_modules"
-  const lsMatch = line.match(
-    /^[d\-lrwxsStT][\-rwxsStT]{8,}\s+/,
-  );
+  const lsMatch = line.match(/^[d\-lrwxsStT][\-rwxsStT]{8,}\s+/);
   if (lsMatch) {
     const parts = line.split(/\s+/);
     const last = parts[parts.length - 1];
     if (last) return last.replace(/\/$/, "");
   }
 
-  // Simple: if the whole line (trimmed) has no spaces and looks like a path
   if (!line.includes(" ") || line.match(/^\.?\//)) {
     const candidate = line.trim().replace(/\/$/, "");
     if (candidate) return candidate;
   }
 
-  // Space-separated tokens: take the last one if it looks path-like
   const tokens = line.trim().split(/\s+/);
   const last = tokens[tokens.length - 1];
   if (last && (last.includes("/") || last.includes("."))) {

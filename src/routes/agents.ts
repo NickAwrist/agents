@@ -1,38 +1,13 @@
 import { Router } from "express";
 import {
-  listAgents,
-  getAgentById,
   createAgentRow,
-  updateAgentRow,
   deleteAgentRow,
-  getDefaultChatAgent,
-  setDefaultChatAgent,
+  getAgentById,
+  listAgents,
+  updateAgentRow,
 } from "../db/index";
-import { BUILTIN_TOOLS } from "../agents/agentManager";
 
-export const toolsRoutes = Router();
-
-toolsRoutes.get("/", (_req, res) => {
-  res.json({ tools: [...BUILTIN_TOOLS] });
-});
-
-export const settingsRoutes = Router();
-
-settingsRoutes.get("/default-chat-agent", (_req, res) => {
-  res.json({ agentName: getDefaultChatAgent() });
-});
-
-settingsRoutes.put("/default-chat-agent", (req, res) => {
-  const raw = (req.body as { agentName?: unknown }).agentName;
-  const name = typeof raw === "string" ? raw.trim() : "";
-  if (!name || !setDefaultChatAgent(name)) {
-    res.status(400).json({ error: "Invalid agent name" });
-    return;
-  }
-  res.json({ ok: true, agentName: getDefaultChatAgent() });
-});
-
-export const agentsRoutes = Router();
+const agentsRoutes = Router();
 
 agentsRoutes.get("/", (_req, res) => {
   res.json({ agents: listAgents() });
@@ -72,7 +47,9 @@ agentsRoutes.post("/", (req, res) => {
   const inc =
     include_personalization === false || include_personalization === 0 ? 0 : 1;
   const incSd =
-    include_session_directory === true || include_session_directory === 1 ? 1 : 0;
+    include_session_directory === true || include_session_directory === 1
+      ? 1
+      : 0;
   const incOs = include_os_info === true || include_os_info === 1 ? 1 : 0;
   try {
     const agent = createAgentRow({
@@ -85,8 +62,9 @@ agentsRoutes.post("/", (req, res) => {
       include_os_info: incOs,
     });
     res.status(201).json(agent);
-  } catch (e: any) {
-    if (e?.message?.includes("UNIQUE constraint")) {
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "";
+    if (msg.includes("UNIQUE constraint")) {
       res.status(409).json({ error: "An agent with that name already exists" });
       return;
     }
@@ -119,7 +97,9 @@ agentsRoutes.put("/:id", (req, res) => {
   const inc =
     include_personalization === false || include_personalization === 0 ? 0 : 1;
   const incSd =
-    include_session_directory === true || include_session_directory === 1 ? 1 : 0;
+    include_session_directory === true || include_session_directory === 1
+      ? 1
+      : 0;
   const incOs = include_os_info === true || include_os_info === 1 ? 1 : 0;
   try {
     const ok = updateAgentRow(req.params.id, {
@@ -136,8 +116,9 @@ agentsRoutes.put("/:id", (req, res) => {
       return;
     }
     res.json({ ok: true });
-  } catch (e: any) {
-    if (e?.message?.includes("UNIQUE constraint")) {
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "";
+    if (msg.includes("UNIQUE constraint")) {
       res.status(409).json({ error: "An agent with that name already exists" });
       return;
     }
@@ -149,9 +130,12 @@ agentsRoutes.delete("/:id", (req, res) => {
   const ok = deleteAgentRow(req.params.id);
   if (!ok) {
     res.status(400).json({
-      error: "Agent not found or cannot delete the required general_agent fallback",
+      error:
+        "Agent not found or cannot delete the required general_agent fallback",
     });
     return;
   }
   res.json({ ok: true });
 });
+
+export default agentsRoutes;

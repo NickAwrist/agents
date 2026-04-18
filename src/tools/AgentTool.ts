@@ -1,13 +1,9 @@
+import type { Tool } from "ollama";
+import type { RunContext, Step } from "../RunContext";
 import { agentManager } from "../agents/agentManager";
 import { BaseTool } from "./BaseTool";
-import type { Tool } from "ollama";
-import type { RunContext } from "../RunContext";
 
 export class AgentTool extends BaseTool {
-  constructor(name: string, description: string) {
-    super(name, description);
-  }
-
   override toTool(): Tool {
     return {
       type: "function",
@@ -25,7 +21,8 @@ export class AgentTool extends BaseTool {
             task_lines: {
               type: "array",
               items: { type: "string" },
-              description: "The overall task to perform, split into an array of strings. Use this instead of 'task' if your prompt contains multiple lines or code.",
+              description:
+                "The overall task to perform, split into an array of strings. Use this instead of 'task' if your prompt contains multiple lines or code.",
             },
           },
           required: [],
@@ -34,16 +31,24 @@ export class AgentTool extends BaseTool {
     };
   }
 
-  override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
-    const task = typeof args.task === "string"
-      ? args.task
-      : Array.isArray(args.task_lines)
-        ? args.task_lines.join("\n")
-        : "";
+  override async execute(
+    args: Record<string, unknown>,
+    ctx?: RunContext,
+    parentToolStep?: Step,
+  ): Promise<string> {
+    const task =
+      typeof args.task === "string"
+        ? args.task
+        : Array.isArray(args.task_lines)
+          ? args.task_lines.join("\n")
+          : "";
     if (!task) return "Error: you must provide a task or task_lines";
 
+    if (!ctx || !parentToolStep) {
+      return "Error: missing context for sub-agent invocation";
+    }
     const agent = agentManager.createAgentForContext(this.name, ctx);
-    const childCtx = ctx?.createChild(agent, task);
+    const childCtx = ctx.createChild(agent, task, parentToolStep);
     return agent.run(task, childCtx);
   }
 }

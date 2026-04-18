@@ -1,7 +1,7 @@
-import { Router, type Request } from "express";
-import crypto from "crypto";
-import { pickFolderNative } from "../nativeFolderPicker";
+import crypto from "node:crypto";
+import { type Request, Router } from "express";
 import {
+  type WireMessage,
   createSessionRow,
   deleteSessionRow,
   getAgentByName,
@@ -10,10 +10,10 @@ import {
   listSessionSummaries,
   parseModelMessages,
   patchSessionRow,
-  replaceSessionMessages,
+  persistSessionMessages,
   resolveSessionAgentName,
-  type WireMessage,
 } from "../db/index";
+import { pickFolderNative } from "../nativeFolderPicker";
 
 const router = Router();
 
@@ -30,7 +30,8 @@ function isFolderPickerAllowed(req: Request): boolean {
 router.post("/pick-directory", async (req, res) => {
   if (!isFolderPickerAllowed(req)) {
     res.status(403).json({
-      error: "Folder picker only runs on the machine where the API server is started (localhost).",
+      error:
+        "Folder picker only runs on the machine where the API server is started (localhost).",
     });
     return;
   }
@@ -82,11 +83,14 @@ router.post("/", (req, res) => {
   const id = crypto.randomUUID();
   const now = Date.now();
   const model =
-    typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
+    typeof body.model === "string" && body.model.trim()
+      ? body.model.trim()
+      : null;
   const rawAgent =
-    typeof body.agentName === "string" && body.agentName.trim() ? body.agentName.trim() : null;
-  const agentName =
-    rawAgent && getAgentByName(rawAgent) ? rawAgent : null;
+    typeof body.agentName === "string" && body.agentName.trim()
+      ? body.agentName.trim()
+      : null;
+  const agentName = rawAgent && getAgentByName(rawAgent) ? rawAgent : null;
   createSessionRow(id, now, model, agentName);
   res.status(201).json({ id, createdAt: now, updatedAt: now });
 });
@@ -119,8 +123,10 @@ router.patch("/:id", (req, res) => {
             : parseModelMessages(row.model_messages)
         : parseModelMessages(row.model_messages);
     const chatModel =
-      typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined;
-    replaceSessionMessages(id, hist, mm, now, chatModel);
+      typeof body.model === "string" && body.model.trim()
+        ? body.model.trim()
+        : undefined;
+    persistSessionMessages(id, hist, mm, now, chatModel);
   }
 
   const patch: Parameters<typeof patchSessionRow>[1] = { updated_at: now };
@@ -133,9 +139,14 @@ router.patch("/:id", (req, res) => {
           ? t.trim() || null
           : null;
   }
-  if ("model" in body && body.model !== undefined && !Array.isArray(body.history)) {
+  if (
+    "model" in body &&
+    body.model !== undefined &&
+    !Array.isArray(body.history)
+  ) {
     const m = body.model;
-    patch.model = m === null ? null : typeof m === "string" ? m.trim() || null : null;
+    patch.model =
+      m === null ? null : typeof m === "string" ? m.trim() || null : null;
   }
   if ("modelMessages" in body && !Array.isArray(body.history)) {
     const mm = body.modelMessages;
@@ -146,7 +157,11 @@ router.patch("/:id", (req, res) => {
           ? (mm as Array<Record<string, unknown>>)
           : null;
   }
-  if ("agentName" in body && body.agentName !== undefined && !Array.isArray(body.history)) {
+  if (
+    "agentName" in body &&
+    body.agentName !== undefined &&
+    !Array.isArray(body.history)
+  ) {
     const a = body.agentName;
     if (a === null) {
       patch.agent_name = null;
@@ -159,7 +174,11 @@ router.patch("/:id", (req, res) => {
       patch.agent_name = t;
     }
   }
-  if ("sessionDirectory" in body && body.sessionDirectory !== undefined && !Array.isArray(body.history)) {
+  if (
+    "sessionDirectory" in body &&
+    body.sessionDirectory !== undefined &&
+    !Array.isArray(body.history)
+  ) {
     const d = body.sessionDirectory;
     patch.session_directory =
       d === null || d === undefined

@@ -1,18 +1,24 @@
+import { Readable } from "node:stream";
 import { Router } from "express";
-import { ComfyUIClient, getComfyUIClient, invalidateComfyUIClient } from "../comfyui/client";
 import {
-  getComfyUIHost,
-  setComfyUIHost,
+  ComfyUIClient,
+  getComfyUIClient,
+  invalidateComfyUIClient,
+} from "../comfyui/client";
+import {
   getComfyUIDefaultModel,
-  setComfyUIDefaultModel,
+  getComfyUIHost,
   getComfyUIImageSize,
-  setComfyUIImageSize,
   getComfyUINegativePrompt,
+  setComfyUIDefaultModel,
+  setComfyUIHost,
+  setComfyUIImageSize,
   setComfyUINegativePrompt,
 } from "../db/index";
-import { Readable } from "node:stream";
+import { logger } from "../logger";
 
 const router = Router();
+const log = logger.child({ route: "comfyui" });
 
 router.get("/health", async (_req, res) => {
   try {
@@ -20,6 +26,7 @@ router.get("/health", async (_req, res) => {
     const result = await client.healthCheck();
     res.json({ connected: result.ok, error: result.error });
   } catch (e) {
+    log.error({ err: e }, "comfyui health");
     res.json({
       connected: false,
       error: e instanceof Error ? e.message : String(e),
@@ -53,7 +60,10 @@ router.put("/config", (req, res) => {
   if (typeof body.defaultModel === "string") {
     setComfyUIDefaultModel(body.defaultModel);
   }
-  if (typeof body.defaultWidth === "number" && typeof body.defaultHeight === "number") {
+  if (
+    typeof body.defaultWidth === "number" &&
+    typeof body.defaultHeight === "number"
+  ) {
     setComfyUIImageSize(body.defaultWidth, body.defaultHeight);
   }
   if (typeof body.negativePrompt === "string") {
@@ -84,20 +94,24 @@ router.get("/models", async (_req, res) => {
     const models = await client.getModels();
     res.json({ models });
   } catch (e) {
+    log.error({ err: e }, "comfyui models");
     res.json({ models: [], error: e instanceof Error ? e.message : String(e) });
   }
 });
 
 router.get("/view/:filename", async (req, res) => {
   const { filename } = req.params;
-  const subfolder = typeof req.query.subfolder === "string" ? req.query.subfolder : undefined;
+  const subfolder =
+    typeof req.query.subfolder === "string" ? req.query.subfolder : undefined;
   const type = typeof req.query.type === "string" ? req.query.type : "output";
 
   try {
     const client = getComfyUIClient();
     const upstream = await client.fetchViewAsset(filename, subfolder, type);
     if (!upstream.ok) {
-      res.status(upstream.status).json({ error: `ComfyUI returned ${upstream.status}` });
+      res
+        .status(upstream.status)
+        .json({ error: `ComfyUI returned ${upstream.status}` });
       return;
     }
 
@@ -108,12 +122,15 @@ router.get("/view/:filename", async (req, res) => {
     if (contentLength) res.setHeader("Content-Length", contentLength);
 
     if (upstream.body) {
-      Readable.fromWeb(upstream.body as unknown as import("node:stream/web").ReadableStream).pipe(res);
+      Readable.fromWeb(
+        upstream.body as unknown as import("node:stream/web").ReadableStream,
+      ).pipe(res);
     } else {
       const buffer = Buffer.from(await upstream.arrayBuffer());
       res.send(buffer);
     }
   } catch (e) {
+    log.error({ err: e }, "comfyui view proxy");
     res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
   }
 });

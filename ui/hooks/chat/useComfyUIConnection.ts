@@ -10,7 +10,9 @@ type ComfyConfigJson = {
 
 export function useComfyUIConnection() {
   const [comfyuiHost, setComfyuiHost] = useState("");
-  const [comfyuiConnected, setComfyuiConnected] = useState<boolean | null>(null);
+  const [comfyuiConnected, setComfyuiConnected] = useState<boolean | null>(
+    null,
+  );
   const [comfyuiDefaultModel, setComfyuiDefaultModel] = useState("");
   const [comfyuiDefaultWidth, setComfyuiDefaultWidth] = useState(1440);
   const [comfyuiDefaultHeight, setComfyuiDefaultHeight] = useState(1440);
@@ -19,7 +21,9 @@ export function useComfyUIConnection() {
   const fetchComfyUIHealth = useCallback(async () => {
     try {
       const res = await fetch("/api/comfyui/health");
-      const data = (await res.json().catch(() => ({}))) as { connected?: boolean };
+      const data = (await res.json().catch(() => ({}))) as {
+        connected?: boolean;
+      };
       setComfyuiConnected(data.connected === true);
     } catch {
       setComfyuiConnected(false);
@@ -28,10 +32,14 @@ export function useComfyUIConnection() {
 
   const applyComfyConfigResponse = useCallback((data: ComfyConfigJson) => {
     if (typeof data.host === "string") setComfyuiHost(data.host);
-    if (typeof data.defaultModel === "string") setComfyuiDefaultModel(data.defaultModel);
-    if (typeof data.defaultWidth === "number") setComfyuiDefaultWidth(data.defaultWidth);
-    if (typeof data.defaultHeight === "number") setComfyuiDefaultHeight(data.defaultHeight);
-    if (typeof data.negativePrompt === "string") setComfyuiNegativePrompt(data.negativePrompt);
+    if (typeof data.defaultModel === "string")
+      setComfyuiDefaultModel(data.defaultModel);
+    if (typeof data.defaultWidth === "number")
+      setComfyuiDefaultWidth(data.defaultWidth);
+    if (typeof data.defaultHeight === "number")
+      setComfyuiDefaultHeight(data.defaultHeight);
+    if (typeof data.negativePrompt === "string")
+      setComfyuiNegativePrompt(data.negativePrompt);
   }, []);
 
   useEffect(() => {

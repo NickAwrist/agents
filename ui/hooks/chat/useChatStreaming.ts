@@ -1,12 +1,12 @@
 import {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
   type Dispatch,
   type FormEvent,
   type MutableRefObject,
   type SetStateAction,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
 } from "react";
 import type {
   DebugData,
@@ -15,24 +15,13 @@ import type {
   TraceModalSelection,
   TruncateConfirmState,
 } from "../../types";
+import type { ChatFlightApi } from "./chatTypes";
+export type { ChatFlightApi };
+import { readSseBlocks } from "../../lib/readSseBlocks";
 import { fetchSession, patchSessionApi } from "../../persist/sessions";
 import type { UserSettings } from "../../persist/userSettings";
-import { readSseBlocks } from "../../lib/readSseBlocks";
-
-/** Wired from useChatApp so loadSession can restore mid-flight UI when returning to that session. */
-export type ChatFlightApi = {
-  shouldPreserveMessages: (sessionId: string) => boolean;
-  getTurnSnapshot: () => Message[] | null;
-  hydrateStreaming: () => void;
-  reconnectToStream: (sessionId: string, requestId: string) => void;
-};
-
-type StreamBuffer = {
-  content: string;
-  thinking: string;
-  step: MessageStep | null;
-  steps: MessageStep[];
-};
+import { useChatFlight } from "./useChatFlight";
+import { useTurnBuffer } from "./useTurnBuffer";
 
 type Args = {
   messages: Message[];
@@ -71,21 +60,16 @@ export function useChatStreaming(p: Args) {
   const [streamingThinking, setStreamingThinking] = useState("");
   const [chatPending, setChatPending] = useState(false);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const activeRequestIdRef = useRef<string | null>(null);
-  /** Session id for the in-flight `/api/chat` request (persisted id or ephemeral client id). */
+  const rawChatPendingRef = useRef(false);
   const inFlightSessionIdRef = useRef<string | null>(null);
   const inFlightEphemeralRef = useRef(false);
-  const [inFlightSessionId, setInFlightSessionId] = useState<string | null>(null);
-  const rawChatPendingRef = useRef(false);
-  const streamBufferRef = useRef<StreamBuffer>({
-    content: "",
-    thinking: "",
-    step: null,
-    steps: [],
-  });
-  const turnMessagesSnapshotRef = useRef<Message[] | null>(null);
-  const turnRootAgentNameRef = useRef("");
+
+  const {
+    streamBufferRef,
+    turnMessagesSnapshotRef,
+    turnRootAgentNameRef,
+    resetStreamBuffers,
+  } = useTurnBuffer();
 
   p.debugOpenRef.current = p.debugOpen;
 
@@ -95,133 +79,37 @@ export function useChatStreaming(p: Args) {
       setStreamingSteps([]);
       setStreamingContent("");
       setStreamingThinking("");
+      resetStreamBuffers();
     });
-  }, [p.bindStreamingReset]);
+  }, [p.bindStreamingReset, resetStreamBuffers]);
 
-  const reconnectToStream = useCallback(
-    (sessionId: string, requestId: string) => {
-      if (rawChatPendingRef.current) return;
-
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-      activeRequestIdRef.current = requestId;
-      inFlightSessionIdRef.current = sessionId;
-      inFlightEphemeralRef.current = false;
-      rawChatPendingRef.current = true;
-      streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
-
-      setInFlightSessionId(sessionId);
-      setChatPending(true);
-      setStreamingStep(null);
-      setStreamingSteps([]);
-      setStreamingContent("");
-      setStreamingThinking("");
-
-      const rootAgent = p.selectedSessionAgentRef.current;
-      const viewing = () => p.activeSessionIdRef.current === sessionId;
-
-      void (async () => {
-        try {
-          const res = await fetch(`/api/chat/stream/${encodeURIComponent(sessionId)}`, {
-            signal: controller.signal,
-          });
-          if (!res.ok || !res.body) return;
-          const reader = res.body.getReader();
-          const finalizeReconnect = async () => {
-            if (viewing()) {
-              setStreamingStep(null);
-              setStreamingSteps([]);
-              setStreamingContent("");
-              setStreamingThinking("");
-            }
-            try {
-              const s = await fetchSession(sessionId);
-              if (viewing()) {
-                if (s?.history?.length) p.setMessages(s.history);
-                p.modelMessagesRef.current = s?.modelMessages ?? null;
-              }
-            } catch (e) {
-              console.error(e);
-            }
-            await p.refreshSessions();
-          };
-
-          await readSseBlocks(reader, async (data) => {
-            if (data.type === "chat_started") {
-              if (typeof data.requestId === "string") {
-                activeRequestIdRef.current = data.requestId;
-              }
-            } else if (data.type === "stream_delta") {
-              const cd = typeof data.contentDelta === "string" ? data.contentDelta : "";
-              const td = typeof data.thinkingDelta === "string" ? data.thinkingDelta : "";
-              const agent = typeof data.agentName === "string" ? data.agentName : "";
-              const buf = streamBufferRef.current;
-              if (td) buf.thinking += td;
-              if (cd && agent === rootAgent) buf.content += cd;
-              if (!viewing()) return;
-              if (cd && agent === rootAgent) setStreamingContent((prev) => prev + cd);
-              if (td) setStreamingThinking((prev) => prev + td);
-            } else if (data.type === "step") {
-              const step = data.step as MessageStep;
-              const buf = streamBufferRef.current;
-              if (step.status === "running") {
-                buf.thinking = "";
-                if (step.kind !== "complete") buf.content = "";
-              }
-              buf.step = step;
-              if (Array.isArray(data.steps)) buf.steps = data.steps as MessageStep[];
-              if (!viewing()) return;
-              if (step.status === "running") {
-                setStreamingThinking("");
-                if (step.kind !== "complete") setStreamingContent("");
-              }
-              setStreamingStep(step);
-              if (Array.isArray(data.steps)) setStreamingSteps(data.steps as MessageStep[]);
-            } else if (data.type === "chat_done" || data.type === "chat_aborted") {
-              await finalizeReconnect();
-            } else if (data.type === "error") {
-              if (viewing()) {
-                setStreamingStep(null);
-                setStreamingSteps([]);
-                setStreamingContent("");
-                setStreamingThinking("");
-              }
-            }
-          });
-        } catch (err) {
-          if (controller.signal.aborted) return;
-          console.error("reconnect stream error", err);
-        } finally {
-          abortControllerRef.current = null;
-          activeRequestIdRef.current = null;
-          inFlightSessionIdRef.current = null;
-          inFlightEphemeralRef.current = false;
-          rawChatPendingRef.current = false;
-          streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
-          turnMessagesSnapshotRef.current = null;
-          setInFlightSessionId(null);
-          setChatPending(false);
-        }
-      })();
+  const flight = useChatFlight(
+    {
+      activeSessionIdRef: p.activeSessionIdRef,
+      modelMessagesRef: p.modelMessagesRef,
+      selectedSessionAgentRef: p.selectedSessionAgentRef,
+      setMessages: p.setMessages,
+      refreshSessions: p.refreshSessions,
+      streamBufferRef,
+      setStreamingStep,
+      setStreamingSteps,
+      setStreamingContent,
+      setStreamingThinking,
+      setChatPending,
     },
-    [p.activeSessionIdRef, p.modelMessagesRef, p.refreshSessions, p.selectedSessionAgentRef, p.setMessages],
+    p.chatFlightRef,
+    rawChatPendingRef,
+    inFlightSessionIdRef,
+    inFlightEphemeralRef,
+    turnMessagesSnapshotRef,
   );
 
-  useLayoutEffect(() => {
-    p.chatFlightRef.current = {
-      shouldPreserveMessages: (sessionId: string) =>
-        rawChatPendingRef.current && inFlightSessionIdRef.current === sessionId,
-      getTurnSnapshot: () => turnMessagesSnapshotRef.current,
-      hydrateStreaming: () => {
-        const b = streamBufferRef.current;
-        setStreamingContent(b.content);
-        setStreamingThinking(b.thinking);
-        setStreamingStep(b.step);
-        setStreamingSteps(Array.isArray(b.steps) ? [...b.steps] : []);
-      },
-      reconnectToStream,
-    };
-  }, [p.chatFlightRef, reconnectToStream]);
+  const {
+    abortControllerRef,
+    activeRequestIdRef,
+    inFlightSessionId,
+    setInFlightSessionId,
+  } = flight;
 
   const fetchDebugData = useCallback(
     async (id: string) => {
@@ -232,7 +120,10 @@ export function useChatStreaming(p: Args) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...(p.isEphemeralRef.current
-              ? { ephemeral: true, agentName: p.selectedSessionAgentRef.current }
+              ? {
+                  ephemeral: true,
+                  agentName: p.selectedSessionAgentRef.current,
+                }
               : { sessionId: id }),
             sessionDirectory: p.sessionDirectoryRef.current.trim() || undefined,
             personalization: {
@@ -243,13 +134,19 @@ export function useChatStreaming(p: Args) {
           }),
         });
         if (!debugRes.ok) {
-          console.error("debug-prompt failed", await debugRes.text().catch(() => ""));
+          console.error(
+            "debug-prompt failed",
+            await debugRes.text().catch(() => ""),
+          );
           return;
         }
         const debugJson = (await debugRes.json()) as { systemPrompt?: string };
         const stored = await fetchSession(id);
         p.setDebugData({
-          systemPrompt: typeof debugJson.systemPrompt === "string" ? debugJson.systemPrompt : "",
+          systemPrompt:
+            typeof debugJson.systemPrompt === "string"
+              ? debugJson.systemPrompt
+              : "",
           history: stored?.history ?? [],
           customTitle: stored?.customTitle ?? null,
           modelMessages: stored?.modelMessages,
@@ -258,7 +155,13 @@ export function useChatStreaming(p: Args) {
         console.error("Failed to load debug data", e);
       }
     },
-    [p.isEphemeralRef, p.selectedSessionAgentRef, p.sessionDirectoryRef, p.setDebugData, p.userSettingsRef],
+    [
+      p.isEphemeralRef,
+      p.selectedSessionAgentRef,
+      p.sessionDirectoryRef,
+      p.setDebugData,
+      p.userSettingsRef,
+    ],
   );
 
   const runChatTurn = useCallback(
@@ -276,8 +179,16 @@ export function useChatStreaming(p: Args) {
       inFlightSessionIdRef.current = turnSessionId;
       inFlightEphemeralRef.current = ephemeral;
       turnRootAgentNameRef.current = p.selectedSessionAgentRef.current;
-      streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
-      turnMessagesSnapshotRef.current = [...priorMessages, { role: "user" as const, content: msg }];
+      streamBufferRef.current = {
+        content: "",
+        thinking: "",
+        step: null,
+        steps: [],
+      };
+      turnMessagesSnapshotRef.current = [
+        ...priorMessages,
+        { role: "user" as const, content: msg },
+      ];
       rawChatPendingRef.current = true;
       setInFlightSessionId(turnSessionId);
       setChatPending(true);
@@ -286,9 +197,13 @@ export function useChatStreaming(p: Args) {
       setStreamingContent("");
       setStreamingThinking("");
 
-      const viewingThisTurn = () => p.activeSessionIdRef.current === turnSessionId;
+      const viewingThisTurn = () =>
+        p.activeSessionIdRef.current === turnSessionId;
 
-      const nextHistory: Message[] = [...priorMessages, { role: "user" as const, content: msg }];
+      const nextHistory: Message[] = [
+        ...priorMessages,
+        { role: "user" as const, content: msg },
+      ];
       if (viewingThisTurn()) {
         p.setMessages(nextHistory);
       }
@@ -303,11 +218,15 @@ export function useChatStreaming(p: Args) {
           p.setMessages(failedHistory);
         }
         if (!ephemeral) {
-          let mm = options.rebuildModelMessages ? null : p.modelMessagesRef.current;
+          let mm = options.rebuildModelMessages
+            ? null
+            : p.modelMessagesRef.current;
           if (!viewingThisTurn()) {
             try {
               const cur = await fetchSession(turnSessionId);
-              mm = options.rebuildModelMessages ? null : cur?.modelMessages ?? null;
+              mm = options.rebuildModelMessages
+                ? null
+                : (cur?.modelMessages ?? null);
             } catch {
               mm = options.rebuildModelMessages ? null : null;
             }
@@ -352,7 +271,8 @@ export function useChatStreaming(p: Args) {
           } else {
             chatBody.sessionId = turnSessionId;
           }
-          chatBody.sessionDirectory = p.sessionDirectoryRef.current.trim() || undefined;
+          chatBody.sessionDirectory =
+            p.sessionDirectoryRef.current.trim() || undefined;
           res = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -362,12 +282,16 @@ export function useChatStreaming(p: Args) {
         } catch (err) {
           if (controller.signal.aborted) return;
           console.error(err);
-          await failWithAssistantError(err instanceof Error ? err.message : "Network error");
+          await failWithAssistantError(
+            err instanceof Error ? err.message : "Network error",
+          );
           return;
         }
 
         if (!res.ok) {
-          const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+          const errBody = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
           await failWithAssistantError(
             typeof errBody.error === "string" ? errBody.error : res.statusText,
           );
@@ -387,9 +311,14 @@ export function useChatStreaming(p: Args) {
                 activeRequestIdRef.current = data.requestId;
               }
             } else if (data.type === "stream_delta") {
-              const cd = typeof data.contentDelta === "string" ? data.contentDelta : "";
-              const td = typeof data.thinkingDelta === "string" ? data.thinkingDelta : "";
-              const agent = typeof data.agentName === "string" ? data.agentName : "";
+              const cd =
+                typeof data.contentDelta === "string" ? data.contentDelta : "";
+              const td =
+                typeof data.thinkingDelta === "string"
+                  ? data.thinkingDelta
+                  : "";
+              const agent =
+                typeof data.agentName === "string" ? data.agentName : "";
               const buf = streamBufferRef.current;
               if (td) buf.thinking += td;
               if (cd && agent === turnRootAgentNameRef.current) {
@@ -410,7 +339,8 @@ export function useChatStreaming(p: Args) {
                 }
               }
               buf.step = step;
-              if (Array.isArray(data.steps)) buf.steps = data.steps as MessageStep[];
+              if (Array.isArray(data.steps))
+                buf.steps = data.steps as MessageStep[];
               if (!viewingThisTurn()) return;
               if (step.status === "running") {
                 setStreamingThinking("");
@@ -419,7 +349,8 @@ export function useChatStreaming(p: Args) {
                 }
               }
               setStreamingStep(step);
-              if (Array.isArray(data.steps)) setStreamingSteps(data.steps as MessageStep[]);
+              if (Array.isArray(data.steps))
+                setStreamingSteps(data.steps as MessageStep[]);
             } else if (data.type === "chat_done") {
               if (viewingThisTurn()) {
                 setStreamingStep(null);
@@ -428,8 +359,11 @@ export function useChatStreaming(p: Args) {
                 setStreamingThinking("");
               }
               if (ephemeral) {
-                const assistantContent = typeof data.result === "string" ? data.result : "";
-                const steps = (Array.isArray(data.steps) ? data.steps : []) as MessageStep[];
+                const assistantContent =
+                  typeof data.result === "string" ? data.result : "";
+                const steps = (
+                  Array.isArray(data.steps) ? data.steps : []
+                ) as MessageStep[];
                 if (viewingThisTurn()) {
                   p.setMessages([
                     ...priorMessages,
@@ -437,7 +371,9 @@ export function useChatStreaming(p: Args) {
                     { role: "assistant", content: assistantContent, steps },
                   ]);
                   if (Array.isArray(data.modelMessages)) {
-                    p.modelMessagesRef.current = data.modelMessages as Array<Record<string, unknown>>;
+                    p.modelMessagesRef.current = data.modelMessages as Array<
+                      Record<string, unknown>
+                    >;
                   }
                 }
               } else {
@@ -449,8 +385,11 @@ export function useChatStreaming(p: Args) {
                   }
                 } catch (e) {
                   console.error(e);
-                  const assistantContent = typeof data.result === "string" ? data.result : "";
-                  const steps = (Array.isArray(data.steps) ? data.steps : []) as MessageStep[];
+                  const assistantContent =
+                    typeof data.result === "string" ? data.result : "";
+                  const steps = (
+                    Array.isArray(data.steps) ? data.steps : []
+                  ) as MessageStep[];
                   if (viewingThisTurn()) {
                     p.setMessages([
                       ...priorMessages,
@@ -461,7 +400,8 @@ export function useChatStreaming(p: Args) {
                 }
                 await p.refreshSessions();
               }
-              if (p.debugOpenRef.current && viewingThisTurn()) void fetchDebugData(turnSessionId);
+              if (p.debugOpenRef.current && viewingThisTurn())
+                void fetchDebugData(turnSessionId);
             } else if (data.type === "chat_aborted") {
               if (viewingThisTurn()) {
                 setStreamingStep(null);
@@ -469,7 +409,9 @@ export function useChatStreaming(p: Args) {
                 setStreamingContent("");
                 setStreamingThinking("");
               }
-              const hist = Array.isArray(data.history) ? (data.history as Message[]) : [];
+              const hist = Array.isArray(data.history)
+                ? (data.history as Message[])
+                : [];
               if (hist.length && viewingThisTurn()) p.setMessages(hist);
               if (!ephemeral) {
                 try {
@@ -490,14 +432,17 @@ export function useChatStreaming(p: Args) {
                 setStreamingContent("");
                 setStreamingThinking("");
               }
-              const errText = typeof data.error === "string" ? data.error : "Unknown error";
+              const errText =
+                typeof data.error === "string" ? data.error : "Unknown error";
               await failWithAssistantError(errText);
             }
           });
         } catch (err) {
           if (controller.signal.aborted) return;
           console.error(err);
-          await failWithAssistantError(err instanceof Error ? err.message : String(err));
+          await failWithAssistantError(
+            err instanceof Error ? err.message : String(err),
+          );
         }
       } finally {
         abortControllerRef.current = null;
@@ -505,7 +450,12 @@ export function useChatStreaming(p: Args) {
         inFlightSessionIdRef.current = null;
         inFlightEphemeralRef.current = false;
         rawChatPendingRef.current = false;
-        streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
+        streamBufferRef.current = {
+          content: "",
+          thinking: "",
+          step: null,
+          steps: [],
+        };
         turnMessagesSnapshotRef.current = null;
         setInFlightSessionId(null);
         setChatPending(false);
@@ -556,7 +506,12 @@ export function useChatStreaming(p: Args) {
     inFlightSessionIdRef.current = null;
     inFlightEphemeralRef.current = false;
     rawChatPendingRef.current = false;
-    streamBufferRef.current = { content: "", thinking: "", step: null, steps: [] };
+    streamBufferRef.current = {
+      content: "",
+      thinking: "",
+      step: null,
+      steps: [],
+    };
     turnMessagesSnapshotRef.current = null;
 
     p.setMessages((prev) => {
@@ -566,7 +521,9 @@ export function useChatStreaming(p: Args) {
         { role: "assistant" as const, content: "*Response halted by user.*" },
       ];
       if (!turnEphemeral) {
-        void patchSessionApi(turnSid, { history: halted }).catch((e) => console.error(e));
+        void patchSessionApi(turnSid, { history: halted }).catch((e) =>
+          console.error(e),
+        );
       }
       return halted;
     });
@@ -595,8 +552,17 @@ export function useChatStreaming(p: Args) {
     if (!row || row.role !== "user") return;
     const text = tc.kind === "edit" ? tc.text : row.content;
     if (!text.trim()) return;
-    await runChatTurn(sid, p.messages.slice(0, tc.userIndex), text, { rebuildModelMessages: true });
-  }, [p.activeSessionId, p.messages, p.setEditingUserIndex, p.setTruncateConfirm, p.truncateConfirm, runChatTurn]);
+    await runChatTurn(sid, p.messages.slice(0, tc.userIndex), text, {
+      rebuildModelMessages: true,
+    });
+  }, [
+    p.activeSessionId,
+    p.messages,
+    p.setEditingUserIndex,
+    p.setTruncateConfirm,
+    p.truncateConfirm,
+    runChatTurn,
+  ]);
 
   const toggleDebug = useCallback(() => {
     if (!p.debugOpen && p.activeSessionId) {
@@ -604,7 +570,13 @@ export function useChatStreaming(p: Args) {
       void fetchDebugData(p.activeSessionId);
     }
     p.setDebugOpen((v) => !v);
-  }, [fetchDebugData, p.activeSessionId, p.debugOpen, p.fetchOllamaHealth, p.setDebugOpen]);
+  }, [
+    fetchDebugData,
+    p.activeSessionId,
+    p.debugOpen,
+    p.fetchOllamaHealth,
+    p.setDebugOpen,
+  ]);
 
   const sessionChatBusy =
     (chatPending || streamingStep !== null || streamingSteps.length > 0) &&

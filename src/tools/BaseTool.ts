@@ -1,5 +1,5 @@
 import type { Tool } from "ollama";
-import type { RunContext } from "../RunContext";
+import type { RunContext, Step } from "../RunContext";
 
 export class BaseTool {
   name: string;
@@ -10,7 +10,11 @@ export class BaseTool {
     this.description = description;
   }
 
-  async execute(args: Record<string, unknown>, _ctx?: RunContext): Promise<string> {
+  async execute(
+    args: Record<string, unknown>,
+    _ctx?: RunContext,
+    _parentToolStep?: Step,
+  ): Promise<string> {
     throw new Error("Tool not implemented");
   }
 

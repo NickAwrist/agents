@@ -1,13 +1,19 @@
-import { EventEmitter } from "events";
-import { agentManager } from "../agents/agentManager";
+import { EventEmitter } from "node:events";
 import { RunContext } from "../RunContext";
+import type { BaseAgent } from "../agents/BaseAgent";
+import { agentManager } from "../agents/agentManager";
+import { logger } from "../logger";
 
 export type HistoryWireStep = Record<string, unknown>;
 
 export class AgentSession extends EventEmitter {
   public sessionId: string;
-  public history: { role: string; content: string; steps?: HistoryWireStep[] }[] = [];
-  private generalAgent: any;
+  public history: {
+    role: string;
+    content: string;
+    steps?: HistoryWireStep[];
+  }[] = [];
+  private generalAgent: BaseAgent;
   private readonly toolSessionDir?: string;
 
   constructor(
@@ -61,7 +67,7 @@ export class AgentSession extends EventEmitter {
 
   public async sendChat(prompt: string, signal?: AbortSignal): Promise<string> {
     this.history.push({ role: "user", content: prompt });
-    
+
     const ctx = new RunContext(
       this.generalAgent,
       prompt,
@@ -93,9 +99,12 @@ export class AgentSession extends EventEmitter {
         aborted = true;
         result = "";
       } else {
-        console.error(`[AgentSession ${this.sessionId}] error:`, e);
+        logger.error(
+          { err: e, sessionId: this.sessionId },
+          "AgentSession error",
+        );
         result = `Error: ${e instanceof Error ? e.message : String(e)}`;
-        ctx.failStep(result);
+        ctx.failLastRunningStep(result);
       }
     }
 
@@ -119,11 +128,16 @@ export class AgentSession extends EventEmitter {
 
   /** Cumulative messages the agent keeps for the next Ollama call (user / assistant+tool_calls / tool). */
   getModelMessagesForDebug(): Array<Record<string, unknown>> {
-    return this.generalAgent.history.map((msg: { role: string; content?: string; tool_calls?: unknown }) => {
-      const row: Record<string, unknown> = { role: msg.role, content: msg.content ?? "" };
-      if (msg.tool_calls != null) row.tool_calls = msg.tool_calls;
-      return row;
-    });
+    return this.generalAgent.history.map(
+      (msg: { role: string; content?: string; tool_calls?: unknown }) => {
+        const row: Record<string, unknown> = {
+          role: msg.role,
+          content: msg.content ?? "",
+        };
+        if (msg.tool_calls != null) row.tool_calls = msg.tool_calls;
+        return row;
+      },
+    );
   }
 
   getSystemPromptForDebug(): string {

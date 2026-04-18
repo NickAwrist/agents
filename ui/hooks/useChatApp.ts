@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { DebugData, Message, TraceModalSelection, TruncateConfirmState } from "../types";
-import type { ChatFlightApi } from "./chat/useChatStreaming";
+import type { ChatFlightApi } from "./chat/chatTypes";
 import { traceStepsForModal } from "../components/ExecutionTrace";
 import { useOllamaConnection } from "./chat/useOllamaConnection";
 import { useComfyUIConnection } from "./chat/useComfyUIConnection";

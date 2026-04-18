@@ -1,5 +1,9 @@
 import { useCallback, useRef, useState } from "react";
-import { loadUserSettings, updateUserSettings, type UserSettings } from "../../persist/userSettings";
+import {
+  type UserSettings,
+  loadUserSettings,
+  updateUserSettings,
+} from "../../persist/userSettings";
 import type { ComfyUIConfigPayload } from "../../types";
 
 type ComfyConfigResponse = {
@@ -17,12 +21,18 @@ export function useSettings(
   fetchComfyUIHealth: () => Promise<void>,
   applyComfyConfigResponse: (data: ComfyConfigResponse) => void,
 ) {
-  const [userSettings, setUserSettings] = useState<UserSettings>(() => loadUserSettings());
+  const [userSettings, setUserSettings] = useState<UserSettings>(() =>
+    loadUserSettings(),
+  );
   const userSettingsRef = useRef(userSettings);
   userSettingsRef.current = userSettings;
 
   const saveUserSettings = useCallback(
-    async (settings: UserSettings, ollamaHostToSave: string, comfyui?: ComfyUIConfigPayload) => {
+    async (
+      settings: UserSettings,
+      ollamaHostToSave: string,
+      comfyui?: ComfyUIConfigPayload,
+    ) => {
       const updated = updateUserSettings(settings);
       setUserSettings(updated);
       const res = await fetch("/api/ollama/config", {

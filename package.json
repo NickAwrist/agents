@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "concurrently -k \"bun run dev:server\" \"bun run dev:ui\"",
     "dev:server": "bun run --hot src/server.ts",
-    "dev:ui": "vite"
+    "dev:ui": "vite",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "check": "biome check --write ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@tailwindcss/vite": "^4.2.2",
     "@types/bun": "latest",
     "@types/cors": "^2.8.19",
@@ -16,6 +20,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
+    "pino-pretty": "^13.0.0",
     "tailwindcss": "^4.2.2",
     "vite": "^8.0.8"
   },
@@ -27,7 +32,9 @@
     "express": "^5.2.1",
     "ignore": "^7.0.5",
     "lucide-react": "^1.8.0",
+    "node-html-parser": "^7.1.0",
     "ollama": "^0.6.3",
+    "pino": "^9.6.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",

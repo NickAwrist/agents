@@ -1,42 +1,65 @@
+import fs from "node:fs/promises";
 import { homedir } from "node:os";
 import type { Tool } from "ollama";
-import { BaseTool } from "./BaseTool";
-import fs from "fs/promises";
 import type { RunContext } from "../RunContext";
-import { resolveToolFilePath } from "../sessionDirectory";
+import { SandboxError, resolveToolFilePath } from "../sessionDirectory";
 import { loadGitignore } from "../utils/gitignoreFilter";
+import { BaseTool } from "./BaseTool";
 
 export class ListFilesTool extends BaseTool {
   constructor() {
-    super('list_files', 'List all files in the current directory');
+    super("list_files", "List all files in the current directory");
   }
 
   override toTool(): Tool {
     return {
-      type: 'function',
+      type: "function",
       function: {
         name: this.name,
         description: this.description,
         parameters: {
-          type: 'object',
+          type: "object",
           properties: {
-            path: { type: 'string', description: 'Directory path (relative to cwd or absolute). If not provided, the current directory is used.' },
+            path: {
+              type: "string",
+              description:
+                "Directory path (relative to cwd or absolute). If not provided, the current directory is used.",
+            },
           },
         },
       },
     };
   }
 
-  override async execute(args: Record<string, unknown>, ctx?: RunContext): Promise<string> {
+  override async execute(
+    args: Record<string, unknown>,
+    ctx?: RunContext,
+  ): Promise<string> {
     const raw =
-      typeof args.path === "string" && args.path.length > 0 ? args.path : ctx?.sessionDir ?? homedir();
-    const path = resolveToolFilePath(raw, ctx?.sessionDir);
+      typeof args.path === "string" && args.path.length > 0
+        ? args.path
+        : (ctx?.sessionDir ?? homedir());
+    let path: string;
+    try {
+      path = resolveToolFilePath(raw, ctx?.sessionDir, {
+        enforceSandbox: true,
+      });
+    } catch (e) {
+      if (e instanceof SandboxError) {
+        return `Error: ${e.message}`;
+      }
+      throw e;
+    }
     const entries = await fs.readdir(path, { withFileTypes: true });
-    let files = entries.map(entry => entry.isDirectory() ? entry.name + '/' : entry.name);
+    let files = entries.map((entry) =>
+      entry.isDirectory() ? `${entry.name}/` : entry.name,
+    );
 
     const ig = await loadGitignore(path);
-    files = files.filter(f => !ig.ignores(f.endsWith('/') ? f.slice(0, -1) : f));
+    files = files.filter(
+      (f) => !ig.ignores(f.endsWith("/") ? f.slice(0, -1) : f),
+    );
 
-    return 'List of files: ' + files.join(', ');
+    return `List of files: ${files.join(", ")}`;
   }
 }

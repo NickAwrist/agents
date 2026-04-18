@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import { getComfyUIHost } from "../db/index";
+import { logger } from "../logger";
 
 export type ComfyUIPromptResponse = {
   prompt_id: string;
@@ -32,10 +33,39 @@ export class ComfyUIClient {
   private ws: WebSocket | null = null;
   private wsClientId: string | null = null;
   private wsConnectPromise: Promise<WebSocket> | null = null;
-  private messageHandlers: Map<string, (msg: ComfyUIWebSocketMessage) => void> = new Map();
+  private messageHandlers: Map<string, (msg: ComfyUIWebSocketMessage) => void> =
+    new Map();
+  private serializedQueue: Promise<unknown> = Promise.resolve();
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
+  }
+
+  /**
+   * Serialize GPU/WebSocket work so concurrent image generations do not disconnect each other's WS.
+   */
+  runSerialized<T>(task: () => Promise<T>, label?: string): Promise<T> {
+    const log = logger.child({ component: "ComfyUIClient" });
+    const enteredAt = Date.now();
+    const next = this.serializedQueue.then(async () => {
+      const startedAt = Date.now();
+      log.debug({
+        event: "comfy_queue_start",
+        label,
+        queueWaitMs: startedAt - enteredAt,
+      });
+      try {
+        return await task();
+      } finally {
+        log.debug({
+          event: "comfy_queue_done",
+          label,
+          runMs: Date.now() - startedAt,
+        });
+      }
+    });
+    this.serializedQueue = next.catch(() => {});
+    return next as Promise<T>;
   }
 
   private get wsUrl(): string {
@@ -55,7 +85,9 @@ export class ComfyUIClient {
     });
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`ComfyUI prompt failed: ${response.status} - ${errorText}`);
+      throw new Error(
+        `ComfyUI prompt failed: ${response.status} - ${errorText}`,
+      );
     }
     return response.json() as Promise<ComfyUIPromptResponse>;
   }
@@ -68,7 +100,9 @@ export class ComfyUIClient {
     return response.json() as Promise<HistoryResult>;
   }
 
-  async healthCheck(timeoutMs = 5000): Promise<{ ok: boolean; error?: string }> {
+  async healthCheck(
+    timeoutMs = 5000,
+  ): Promise<{ ok: boolean; error?: string }> {
     try {
       const response = await fetch(`${this.baseUrl}/system_stats`, {
         signal: AbortSignal.timeout(timeoutMs),
@@ -76,16 +110,23 @@ export class ComfyUIClient {
       if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 
   async getModels(): Promise<string[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/object_info/CheckpointLoaderSimple`);
+      const response = await fetch(
+        `${this.baseUrl}/object_info/CheckpointLoaderSimple`,
+      );
       if (!response.ok) return [];
       const data = (await response.json()) as Record<string, unknown>;
-      const info = data?.CheckpointLoaderSimple as Record<string, unknown> | undefined;
+      const info = data?.CheckpointLoaderSimple as
+        | Record<string, unknown>
+        | undefined;
       const input = info?.input as Record<string, unknown> | undefined;
       const required = input?.required as Record<string, unknown> | undefined;
       const ckptName = required?.ckpt_name as unknown[] | undefined;
@@ -100,7 +141,11 @@ export class ComfyUIClient {
   }
 
   connectWebSocket(clientId: string): Promise<WebSocket> {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.wsClientId === clientId) {
+    if (
+      this.ws &&
+      this.ws.readyState === WebSocket.OPEN &&
+      this.wsClientId === clientId
+    ) {
       return Promise.resolve(this.ws);
     }
     if (this.wsConnectPromise && this.wsClientId === clientId) {
@@ -111,30 +156,34 @@ export class ComfyUIClient {
     }
 
     this.wsClientId = clientId;
-    const connectPromise: Promise<WebSocket> = new Promise<WebSocket>((resolve, reject) => {
-      const wsUrlWithClient = `${this.wsUrl}?clientId=${clientId}`;
-      const ws = new WebSocket(wsUrlWithClient);
-      this.ws = ws;
+    const connectPromise: Promise<WebSocket> = new Promise<WebSocket>(
+      (resolve, reject) => {
+        const wsUrlWithClient = `${this.wsUrl}?clientId=${clientId}`;
+        const ws = new WebSocket(wsUrlWithClient);
+        this.ws = ws;
 
-      ws.on("open", () => resolve(ws));
-      ws.on("message", (data: WebSocket.Data) => {
-        try {
-          const message: ComfyUIWebSocketMessage = JSON.parse(data.toString());
-          for (const handler of this.messageHandlers.values()) {
-            handler(message);
+        ws.on("open", () => resolve(ws));
+        ws.on("message", (data: WebSocket.Data) => {
+          try {
+            const message: ComfyUIWebSocketMessage = JSON.parse(
+              data.toString(),
+            );
+            for (const handler of this.messageHandlers.values()) {
+              handler(message);
+            }
+          } catch {
+            // ignore unparseable messages
           }
-        } catch {
-          // ignore unparseable messages
-        }
-      });
-      ws.on("error", (error) => reject(error));
-      ws.on("close", () => {
-        if (this.ws === ws) {
-          this.ws = null;
-          this.wsClientId = null;
-        }
-      });
-    }).finally(() => {
+        });
+        ws.on("error", (error) => reject(error));
+        ws.on("close", () => {
+          if (this.ws === ws) {
+            this.ws = null;
+            this.wsClientId = null;
+          }
+        });
+      },
+    ).finally(() => {
       this.wsConnectPromise = null;
     });
 
@@ -142,23 +191,28 @@ export class ComfyUIClient {
     return connectPromise;
   }
 
-  waitForPrompt(promptId: string, timeoutMs = 300000): Promise<ImageGenerationResult[]> {
+  waitForPrompt(
+    promptId: string,
+    timeoutMs = 300000,
+  ): Promise<ImageGenerationResult[]> {
     return new Promise((resolve, reject) => {
       const handlerId = `wait-${promptId}`;
-      let timeoutHandle: ReturnType<typeof setTimeout>;
+      const timeoutHandle = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Timeout waiting for prompt ${promptId}`));
+      }, timeoutMs);
 
       const cleanup = () => {
         this.messageHandlers.delete(handlerId);
         clearTimeout(timeoutHandle);
       };
 
-      timeoutHandle = setTimeout(() => {
-        cleanup();
-        reject(new Error(`Timeout waiting for prompt ${promptId}`));
-      }, timeoutMs);
-
       this.messageHandlers.set(handlerId, async (msg) => {
-        if (msg.type === "executing" && msg.data?.prompt_id === promptId && msg.data?.node === null) {
+        if (
+          msg.type === "executing" &&
+          msg.data?.prompt_id === promptId &&
+          msg.data?.node === null
+        ) {
           cleanup();
           try {
             const history = await this.getHistory(promptId);
@@ -183,7 +237,10 @@ export class ComfyUIClient {
           } catch (error) {
             reject(error);
           }
-        } else if (msg.type === "execution_error" && msg.data?.prompt_id === promptId) {
+        } else if (
+          msg.type === "execution_error" &&
+          msg.data?.prompt_id === promptId
+        ) {
           cleanup();
           reject(new Error("Execution error in ComfyUI"));
         }
@@ -197,7 +254,11 @@ export class ComfyUIClient {
     return `${this.baseUrl}/view?${params.toString()}`;
   }
 
-  async fetchViewAsset(filename: string, subfolder?: string, type = "output"): Promise<Response> {
+  async fetchViewAsset(
+    filename: string,
+    subfolder?: string,
+    type = "output",
+  ): Promise<Response> {
     const url = this.getImageUrl(filename, subfolder, type);
     return fetch(url);
   }

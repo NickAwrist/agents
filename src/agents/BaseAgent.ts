@@ -1,8 +1,16 @@
-import type { RunContext } from "../RunContext";
-import type { BaseTool } from "../tools/BaseTool";
 import type { ToolCall } from "ollama";
+import type { Plan } from "../Plan";
+import type { RunContext, Step } from "../RunContext";
+import { DEFAULT_CHAT_MODEL } from "../constants";
 import { getOllamaClient } from "../ollamaClient";
-import { Plan } from "../Plan";
+import type { BaseTool } from "../tools/BaseTool";
+import { toolErrorToString } from "../tools/errors";
+
+type AssistantHistoryMsg = {
+  role: string;
+  content: string;
+  tool_calls?: ToolCall[];
+};
 
 export class BaseAgent {
   model: string;
@@ -30,7 +38,7 @@ export class BaseAgent {
     this.description = description;
 
     this.tools = tools || [];
-    this.model = model || "gemma4:31b";
+    this.model = model ?? DEFAULT_CHAT_MODEL;
     const coreDirectives = [
       "<tool_format>",
       "When calling tools, output strictly valid JSON arguments. Do not use custom delimiters or markup.",
@@ -43,11 +51,15 @@ export class BaseAgent {
       "</agency>",
     ].join("\n");
     const base = typeof systemPrompt === "string" ? systemPrompt.trim() : "";
-    const p = typeof personalizationBlock === "string" ? personalizationBlock.trim() : "";
-    const sd = typeof sessionContextBlock === "string" ? sessionContextBlock.trim() : "";
+    const p =
+      typeof personalizationBlock === "string"
+        ? personalizationBlock.trim()
+        : "";
+    const sd =
+      typeof sessionContextBlock === "string" ? sessionContextBlock.trim() : "";
     const oi = typeof osContextBlock === "string" ? osContextBlock.trim() : "";
     const core = [base, p, sd, oi].filter((s) => s.length > 0).join("\n\n");
-    this.systemPrompt = core ? core + "\n\n" + coreDirectives : coreDirectives;
+    this.systemPrompt = core ? `${core}\n\n${coreDirectives}` : coreDirectives;
 
     this.history = [];
 
@@ -68,19 +80,23 @@ export class BaseAgent {
     }
   }
 
-  private async executeToolCall(toolCall: ToolCall, ctx?: RunContext): Promise<string> {
+  private async executeToolCall(
+    toolCall: ToolCall,
+    ctx?: RunContext,
+    parentStep?: Step,
+  ): Promise<string> {
     const toolName = toolCall.function.name;
     const args = this.parseToolArguments(toolCall.function.arguments);
 
     const tool = this.TOOL_MAP[toolName];
     if (!tool) {
-      return "Error: tool " + toolName + " not found";
+      return `Error: tool ${toolName} not found`;
     }
 
     try {
-      return await tool.execute(args, ctx);
+      return await tool.execute(args, ctx, parentStep);
     } catch (e) {
-      return e instanceof Error ? e.message : String(e);
+      return `Error: ${toolErrorToString(e, toolName, ctx?.sessionDir)}`;
     }
   }
 
@@ -103,11 +119,16 @@ export class BaseAgent {
   }
 
   async run(prompt: string, ctx?: RunContext): Promise<string> {
-    const signal = ctx?.signal;
-    const systemMsg: { role: string; content: string } | undefined = this.systemPrompt
+    if (!ctx) {
+      throw new Error("RunContext is required to run the agent");
+    }
+    const signal = ctx.signal;
+    const systemMsg: { role: string; content: string } | undefined = this
+      .systemPrompt
       ? { role: "system", content: this.systemPrompt }
       : undefined;
 
+    let userMessage = prompt;
     let fullContent = "";
     let fullThinking = "";
     let toolCalls: ToolCall[] = [];
@@ -116,14 +137,14 @@ export class BaseAgent {
     do {
       if (signal?.aborted) break;
 
-      ctx?.beginStep({ kind: "llm_call", turnIndex });
+      const llmStep = ctx.beginStep({ kind: "llm_call", turnIndex });
 
       const messages = [
         systemMsg || { role: "system", content: "" },
         ...this.history,
       ];
-      if (prompt) {
-        messages.push({ role: "user", content: prompt });
+      if (userMessage) {
+        messages.push({ role: "user", content: userMessage });
       }
 
       const thinkOpt =
@@ -161,7 +182,7 @@ export class BaseAgent {
           if (tDelta) fullThinking += tDelta;
 
           if (cDelta || tDelta) {
-            ctx?.streamDelta(cDelta, tDelta);
+            ctx.streamDelta(cDelta, tDelta);
           }
 
           if (chunk.message.tool_calls?.length) {
@@ -175,27 +196,42 @@ export class BaseAgent {
       }
 
       if (signal?.aborted) {
-        ctx?.endStep(fullContent || "[aborted]", fullThinking || undefined);
+        ctx.endStep(
+          llmStep,
+          fullContent || "[aborted]",
+          fullThinking || undefined,
+        );
         break;
       }
 
       if (fullContent && toolCalls.length) {
-        const toolStr = "→ " + toolCalls.map((c) => c.function.name).join(", ");
-        ctx?.endStep(fullContent + "\n\n" + toolStr, fullThinking || undefined);
+        const toolStr = `→ ${toolCalls.map((c) => c.function.name).join(", ")}`;
+        ctx.endStep(
+          llmStep,
+          `${fullContent}\n\n${toolStr}`,
+          fullThinking || undefined,
+        );
       } else if (fullContent) {
-        ctx?.endStep(fullContent, fullThinking || undefined);
+        ctx.endStep(llmStep, fullContent, fullThinking || undefined);
       } else if (toolCalls.length) {
-        ctx?.endStep("→ " + toolCalls.map((c) => c.function.name).join(", "), fullThinking || undefined);
+        ctx.endStep(
+          llmStep,
+          `→ ${toolCalls.map((c) => c.function.name).join(", ")}`,
+          fullThinking || undefined,
+        );
       } else {
-        ctx?.endStep("", fullThinking || undefined);
+        ctx.endStep(llmStep, "", fullThinking || undefined);
       }
 
-      if (prompt) {
-        this.history.push({ role: "user", content: prompt });
-        prompt = "";
+      if (userMessage) {
+        this.history.push({ role: "user", content: userMessage });
+        userMessage = "";
       }
 
-      const assistantMsg: any = { role: "assistant", content: fullContent };
+      const assistantMsg: AssistantHistoryMsg = {
+        role: "assistant",
+        content: fullContent,
+      };
       if (toolCalls.length > 0) {
         assistantMsg.tool_calls = toolCalls;
       }
@@ -208,21 +244,26 @@ export class BaseAgent {
           const toolName = toolCall.function.name;
           const args = this.parseToolArguments(toolCall.function.arguments);
 
-          ctx?.beginStep({ kind: "tool_call", turnIndex, toolName, args });
-          const result = await this.executeToolCall(toolCall, ctx);
-          ctx?.endStep(result);
+          const toolStep = ctx.beginStep({
+            kind: "tool_call",
+            turnIndex,
+            toolName,
+            args,
+          });
+          const result = await this.executeToolCall(toolCall, ctx, toolStep);
+          ctx.endStep(toolStep, result);
 
           this.history.push({ role: "tool", content: result });
         }
         if (signal?.aborted) break;
-        prompt = "";
+        userMessage = "";
         turnIndex++;
       }
     } while (toolCalls.length);
 
     if (!signal?.aborted) {
-      ctx?.beginStep({ kind: "complete", turnIndex });
-      ctx?.endStep(fullContent, fullThinking || undefined);
+      const completeStep = ctx.beginStep({ kind: "complete", turnIndex });
+      ctx.endStep(completeStep, fullContent, fullThinking || undefined);
     }
 
     return fullContent;

@@ -1,7 +1,10 @@
 import type { UserSettings } from "../../persist/userSettings";
 
 /** Model for new chats: Settings default, else server default (not the active session's model). */
-export function effectiveDefaultChatModel(settings: UserSettings, serverDefault: string): string {
+export function effectiveDefaultChatModel(
+  settings: UserSettings,
+  serverDefault: string,
+): string {
   const u = settings.defaultModel.trim();
   return u || serverDefault;
 }

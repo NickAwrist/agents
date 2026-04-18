@@ -9,7 +9,9 @@ export type ImageWorkflowParams = {
   cfg?: number;
 };
 
-export function buildImageWorkflow(params: ImageWorkflowParams): Record<string, unknown> {
+export function buildImageWorkflow(
+  params: ImageWorkflowParams,
+): Record<string, unknown> {
   const seed = params.seed ?? Math.floor(Math.random() * 2147483647);
   const steps = params.steps ?? 20;
   const cfg = params.cfg ?? 7;

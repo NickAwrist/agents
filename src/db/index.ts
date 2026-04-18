@@ -17,33 +17,47 @@ export const DEFAULT_COMFYUI_NEGATIVE_PROMPT =
   "low quality, worst quality, blurry, watermark, signature, text, bad anatomy, deformed, ugly, duplicate, extra fingers, poorly drawn hands, poorly drawn face, mutation, cropped";
 
 function migrateSessionsAgentColumn(db: Database) {
-  const cols = db.query("PRAGMA table_info(sessions)").all() as { name: string }[];
+  const cols = db.query("PRAGMA table_info(sessions)").all() as {
+    name: string;
+  }[];
   if (!cols.some((c) => c.name === "agent_name")) {
     db.run("ALTER TABLE sessions ADD COLUMN agent_name TEXT");
   }
 }
 
 function migrateAgentsIncludePersonalizationColumn(db: Database) {
-  const cols = db.query("PRAGMA table_info(agents)").all() as { name: string }[];
+  const cols = db.query("PRAGMA table_info(agents)").all() as {
+    name: string;
+  }[];
   if (!cols.some((c) => c.name === "include_personalization")) {
-    db.run("ALTER TABLE agents ADD COLUMN include_personalization INTEGER NOT NULL DEFAULT 1");
+    db.run(
+      "ALTER TABLE agents ADD COLUMN include_personalization INTEGER NOT NULL DEFAULT 1",
+    );
   }
 }
 
 function migrateSessionsDirectoryColumn(db: Database) {
-  const cols = db.query("PRAGMA table_info(sessions)").all() as { name: string }[];
+  const cols = db.query("PRAGMA table_info(sessions)").all() as {
+    name: string;
+  }[];
   if (!cols.some((c) => c.name === "session_directory")) {
     db.run("ALTER TABLE sessions ADD COLUMN session_directory TEXT");
   }
 }
 
 function migrateAgentsSessionDirAndOsColumns(db: Database) {
-  const cols = db.query("PRAGMA table_info(agents)").all() as { name: string }[];
+  const cols = db.query("PRAGMA table_info(agents)").all() as {
+    name: string;
+  }[];
   if (!cols.some((c) => c.name === "include_session_directory")) {
-    db.run("ALTER TABLE agents ADD COLUMN include_session_directory INTEGER NOT NULL DEFAULT 0");
+    db.run(
+      "ALTER TABLE agents ADD COLUMN include_session_directory INTEGER NOT NULL DEFAULT 0",
+    );
   }
   if (!cols.some((c) => c.name === "include_os_info")) {
-    db.run("ALTER TABLE agents ADD COLUMN include_os_info INTEGER NOT NULL DEFAULT 0");
+    db.run(
+      "ALTER TABLE agents ADD COLUMN include_os_info INTEGER NOT NULL DEFAULT 0",
+    );
   }
 }
 
@@ -78,6 +92,7 @@ export function getDb(): Database {
   mkdirSync(dirname(DB_PATH), { recursive: true });
   const db = new Database(DB_PATH);
   db.run("PRAGMA foreign_keys = ON;");
+  db.run("PRAGMA journal_mode = WAL;");
   db.run(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -149,7 +164,10 @@ export type SessionSummaryRow = {
   preview: string;
 };
 
-function previewFromTitleAndFirstUser(title: string | null, firstUser: string | null): string {
+function previewFromTitleAndFirstUser(
+  title: string | null,
+  firstUser: string | null,
+): string {
   const t = title?.trim();
   if (t) return t;
   if (firstUser?.trim()) {
@@ -163,7 +181,7 @@ export function listSessionSummaries(): SessionSummaryRow[] {
   const db = getDb();
   const sessions = db
     .query(
-      `SELECT id, created_at, updated_at, title FROM sessions ORDER BY updated_at DESC`,
+      "SELECT id, created_at, updated_at, title FROM sessions ORDER BY updated_at DESC",
     )
     .all() as Array<{
     id: string;
@@ -190,18 +208,29 @@ export function listSessionSummaries(): SessionSummaryRow[] {
 export function getSessionById(id: string): SessionRow | null {
   const row = getDb()
     .query(
-      `SELECT id, created_at, updated_at, title, model, model_messages, agent_name, session_directory FROM sessions WHERE id = ?`,
+      "SELECT id, created_at, updated_at, title, model, model_messages, agent_name, session_directory FROM sessions WHERE id = ?",
     )
     .get(id) as SessionRow | null;
   return row ?? null;
 }
 
+export function countMessagesForSession(sessionId: string): number {
+  const row = getDb()
+    .query("SELECT COUNT(*) as c FROM messages WHERE session_id = ?")
+    .get(sessionId) as { c: number } | null;
+  return row?.c ?? 0;
+}
+
 export function getMessagesForSession(sessionId: string): WireMessage[] {
   const rows = getDb()
     .query(
-      `SELECT role, content, steps FROM messages WHERE session_id = ? ORDER BY position ASC`,
+      "SELECT role, content, steps FROM messages WHERE session_id = ? ORDER BY position ASC",
     )
-    .all(sessionId) as Array<{ role: string; content: string; steps: string | null }>;
+    .all(sessionId) as Array<{
+    role: string;
+    content: string;
+    steps: string | null;
+  }>;
 
   return rows.map((r) => {
     const msg: WireMessage = { role: r.role, content: r.content };
@@ -216,7 +245,9 @@ export function getMessagesForSession(sessionId: string): WireMessage[] {
   });
 }
 
-export function parseModelMessages(json: string | null): Array<Record<string, unknown>> | null {
+export function parseModelMessages(
+  json: string | null,
+): Array<Record<string, unknown>> | null {
   if (json == null || json === "") return null;
   try {
     const v = JSON.parse(json) as unknown;
@@ -228,7 +259,9 @@ export function parseModelMessages(json: string | null): Array<Record<string, un
 
 function agentNameExistsInDb(name: string): boolean {
   return (
-    getDb().query("SELECT 1 FROM agents WHERE name = ? LIMIT 1").get(name.trim()) != null
+    getDb()
+      .query("SELECT 1 FROM agents WHERE name = ? LIMIT 1")
+      .get(name.trim()) != null
   );
 }
 
@@ -245,7 +278,7 @@ export function setDefaultChatAgent(name: string): boolean {
   const t = name.trim();
   if (!t || !agentNameExistsInDb(t)) return false;
   getDb().run(
-    `INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     [DEFAULT_CHAT_AGENT_KEY, t],
   );
   return true;
@@ -261,7 +294,7 @@ export function getOllamaHost(): string {
 
 export function setOllamaHost(host: string): void {
   getDb().run(
-    `INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     [OLLAMA_HOST_KEY, host.trim()],
   );
 }
@@ -279,7 +312,7 @@ function getAppSetting(key: string): string {
 
 function setAppSetting(key: string, value: string): void {
   getDb().run(
-    `INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     [key, value.trim()],
   );
 }
@@ -301,8 +334,8 @@ export function setComfyUIDefaultModel(model: string): void {
 }
 
 export function getComfyUIImageSize(): { width: number; height: number } {
-  const w = parseInt(getAppSetting(COMFYUI_DEFAULT_WIDTH_KEY), 10);
-  const h = parseInt(getAppSetting(COMFYUI_DEFAULT_HEIGHT_KEY), 10);
+  const w = Number.parseInt(getAppSetting(COMFYUI_DEFAULT_WIDTH_KEY), 10);
+  const h = Number.parseInt(getAppSetting(COMFYUI_DEFAULT_HEIGHT_KEY), 10);
   return { width: w > 0 ? w : 1440, height: h > 0 ? h : 1440 };
 }
 
@@ -342,7 +375,7 @@ export function createSessionRow(
       ? agentName.trim()
       : getDefaultChatAgent();
   db.run(
-    `INSERT INTO sessions (id, created_at, updated_at, title, model, model_messages, agent_name) VALUES (?, ?, ?, NULL, ?, NULL, ?)`,
+    "INSERT INTO sessions (id, created_at, updated_at, title, model, model_messages, agent_name) VALUES (?, ?, ?, NULL, ?, NULL, ?)",
     [id, now, now, model, resolvedAgent],
   );
   return {
@@ -359,7 +392,7 @@ export function createSessionRow(
 
 export function deleteSessionRow(id: string): boolean {
   const db = getDb();
-  const r = db.run(`DELETE FROM sessions WHERE id = ?`, [id]);
+  const r = db.run("DELETE FROM sessions WHERE id = ?", [id]);
   return r.changes > 0;
 }
 
@@ -379,24 +412,42 @@ export function patchSessionRow(
 
   const title = patch.title !== undefined ? patch.title : existing.title;
   const model = patch.model !== undefined ? patch.model : existing.model;
-  const agentName = patch.agent_name !== undefined ? patch.agent_name : existing.agent_name;
+  const agentName =
+    patch.agent_name !== undefined ? patch.agent_name : existing.agent_name;
   const sessionDirectory =
-    patch.session_directory !== undefined ? patch.session_directory : existing.session_directory;
+    patch.session_directory !== undefined
+      ? patch.session_directory
+      : existing.session_directory;
   let modelMessagesJson: string | null = existing.model_messages;
   if (patch.model_messages !== undefined) {
     modelMessagesJson =
-      patch.model_messages == null ? null : JSON.stringify(patch.model_messages);
+      patch.model_messages == null
+        ? null
+        : JSON.stringify(patch.model_messages);
   }
   const updatedAt = patch.updated_at ?? Date.now();
 
   getDb().run(
-    `UPDATE sessions SET title = ?, model = ?, model_messages = ?, agent_name = ?, session_directory = ?, updated_at = ? WHERE id = ?`,
-    [title, model, modelMessagesJson, agentName, sessionDirectory, updatedAt, id],
+    "UPDATE sessions SET title = ?, model = ?, model_messages = ?, agent_name = ?, session_directory = ?, updated_at = ? WHERE id = ?",
+    [
+      title,
+      model,
+      modelMessagesJson,
+      agentName,
+      sessionDirectory,
+      updatedAt,
+      id,
+    ],
   );
   return true;
 }
 
-export function replaceSessionMessages(
+/**
+ * Persists chat history without rewriting the full table each time: truncates when the
+ * client sends a shorter history, appends new tail rows, or updates the last row when
+ * the count is unchanged (e.g. assistant steps filled in).
+ */
+export function persistSessionMessages(
   sessionId: string,
   messages: WireMessage[],
   modelMessages: Array<Record<string, unknown>> | null,
@@ -407,26 +458,48 @@ export function replaceSessionMessages(
   if (!row) return false;
   const db = getDb();
   const nextModel =
-    typeof chatModel === "string" && chatModel.trim() ? chatModel.trim() : row.model;
+    typeof chatModel === "string" && chatModel.trim()
+      ? chatModel.trim()
+      : row.model;
   const tx = db.transaction(() => {
-    db.run(`DELETE FROM messages WHERE session_id = ?`, [sessionId]);
-    const insert = db.prepare(
-      `INSERT INTO messages (session_id, role, content, steps, position) VALUES (?, ?, ?, ?, ?)`,
-    );
-    let pos = 0;
-    for (const m of messages) {
-      const stepsJson =
-        m.steps !== undefined && m.steps != null ? JSON.stringify(m.steps) : null;
-      insert.run(sessionId, m.role, m.content, stepsJson, pos);
-      pos += 1;
+    let n = countMessagesForSession(sessionId);
+    if (messages.length < n) {
+      db.run("DELETE FROM messages WHERE session_id = ? AND position >= ?", [
+        sessionId,
+        messages.length,
+      ]);
+      n = countMessagesForSession(sessionId);
     }
+
+    const insert = db.prepare(
+      "INSERT INTO messages (session_id, role, content, steps, position) VALUES (?, ?, ?, ?, ?)",
+    );
+    for (let i = n; i < messages.length; i++) {
+      const m = messages[i]!;
+      const stepsJson =
+        m.steps !== undefined && m.steps != null
+          ? JSON.stringify(m.steps)
+          : null;
+      insert.run(sessionId, m.role, m.content, stepsJson, i);
+    }
+
+    if (messages.length > 0 && n === messages.length) {
+      const last = messages[messages.length - 1]!;
+      const stepsJson =
+        last.steps !== undefined && last.steps != null
+          ? JSON.stringify(last.steps)
+          : null;
+      db.run(
+        "UPDATE messages SET content = ?, steps = ? WHERE session_id = ? AND position = ?",
+        [last.content, stepsJson, sessionId, messages.length - 1],
+      );
+    }
+
     const mmJson = modelMessages == null ? null : JSON.stringify(modelMessages);
-    db.run(`UPDATE sessions SET model_messages = ?, updated_at = ?, model = ? WHERE id = ?`, [
-      mmJson,
-      updatedAt,
-      nextModel,
-      sessionId,
-    ]);
+    db.run(
+      "UPDATE sessions SET model_messages = ?, updated_at = ?, model = ? WHERE id = ?",
+      [mmJson, updatedAt, nextModel, sessionId],
+    );
   });
   tx();
   return true;
@@ -462,7 +535,8 @@ const DEFAULT_AGENTS: Array<{
 }> = [
   {
     name: "general_agent",
-    description: "Orchestrator agent that answers questions directly or delegates to specialized subagents.",
+    description:
+      "Orchestrator agent that answers questions directly or delegates to specialized subagents.",
     tools: ["computer_agent", "web_search"],
     system_prompt: [
       "You are the orchestrator agent. You answer the user's request directly when you can, and delegate to your tools when the task requires capabilities you do not have.",
@@ -485,7 +559,8 @@ const DEFAULT_AGENTS: Array<{
   },
   {
     name: "computer_agent",
-    description: "Runs shell commands, manages files, installs packages, and performs any OS-level task via bash. Provide a self-contained task description including the exact expected output or deliverable. Use for: running scripts, file operations (copy/move/delete), checking system state, git commands, process management.",
+    description:
+      "Runs shell commands, manages files, installs packages, and performs any OS-level task via bash. Provide a self-contained task description including the exact expected output or deliverable. Use for: running scripts, file operations (copy/move/delete), checking system state, git commands, process management.",
     tools: ["bash"],
     system_prompt: [
       "You are a computer-use agent with access to a bash shell. You execute commands, manage files, and interact with the operating system to complete tasks.",
@@ -499,7 +574,7 @@ const DEFAULT_AGENTS: Array<{
       "",
       "<output_rules>",
       "Your response is consumed by the orchestrator agent, not a human.",
-      "- When asked to read files, list directories, or retrieve information: include the FULL, VERBATIM content in your response. Never summarize or say \"I have read the file\" without including its contents.",
+      '- When asked to read files, list directories, or retrieve information: include the FULL, VERBATIM content in your response. Never summarize or say "I have read the file" without including its contents.',
       "- When asked to execute a command: include the complete stdout/stderr output.",
       "- When asked to perform an action (install, move, delete): confirm what was done and include any relevant output that proves success or shows failure.",
       "</output_rules>",
@@ -510,8 +585,16 @@ const DEFAULT_AGENTS: Array<{
   },
   {
     name: "coding_agent",
-    description: "Reads, writes, analyzes, and refactors source code. Can search codebases with grep, create/edit files, and verify changes with the TypeScript compiler. Provide specific instructions including file paths and expected outcomes. Use for: implementing features, fixing bugs, code review, reading code for analysis, writing tests.",
-    tools: ["list_files", "create_file", "read_file", "run_tsc", "modify_plan", "grep"],
+    description:
+      "Reads, writes, analyzes, and refactors source code. Can search codebases with grep, create/edit files, and verify changes with the TypeScript compiler. Provide specific instructions including file paths and expected outcomes. Use for: implementing features, fixing bugs, code review, reading code for analysis, writing tests.",
+    tools: [
+      "list_files",
+      "create_file",
+      "read_file",
+      "run_tsc",
+      "modify_plan",
+      "grep",
+    ],
     system_prompt: [
       "You are a software engineering agent. You read, write, analyze, and test code using the tools provided.",
       "",
@@ -545,7 +628,9 @@ const DEFAULT_AGENTS: Array<{
 ];
 
 function seedDefaultAgents(db: Database) {
-  const count = db.query("SELECT COUNT(*) as c FROM agents").get() as { c: number };
+  const count = db.query("SELECT COUNT(*) as c FROM agents").get() as {
+    c: number;
+  };
   if (count.c > 0) return;
 
   const now = Date.now();
@@ -588,7 +673,9 @@ export function listAgents(): AgentWithTools[] {
   );
   return rows.map((r) => ({
     ...r,
-    tools: (toolStmt.all(r.id) as { tool_name: string }[]).map((t) => t.tool_name),
+    tools: (toolStmt.all(r.id) as { tool_name: string }[]).map(
+      (t) => t.tool_name,
+    ),
   }));
 }
 
@@ -601,7 +688,11 @@ export function getAgentById(id: string): AgentWithTools | null {
     .get(id) as AgentRow | null;
   if (!row) return null;
   const tools = (
-    db.query("SELECT tool_name FROM agent_tools WHERE agent_id = ? ORDER BY position ASC").all(id) as { tool_name: string }[]
+    db
+      .query(
+        "SELECT tool_name FROM agent_tools WHERE agent_id = ? ORDER BY position ASC",
+      )
+      .all(id) as { tool_name: string }[]
   ).map((t) => t.tool_name);
   return { ...row, tools };
 }
@@ -615,22 +706,24 @@ export function getAgentByName(name: string): AgentWithTools | null {
     .get(name) as AgentRow | null;
   if (!row) return null;
   const tools = (
-    db.query("SELECT tool_name FROM agent_tools WHERE agent_id = ? ORDER BY position ASC").all(row.id) as { tool_name: string }[]
+    db
+      .query(
+        "SELECT tool_name FROM agent_tools WHERE agent_id = ? ORDER BY position ASC",
+      )
+      .all(row.id) as { tool_name: string }[]
   ).map((t) => t.tool_name);
   return { ...row, tools };
 }
 
-export function createAgentRow(
-  data: {
-    name: string;
-    description: string;
-    system_prompt: string;
-    tools: string[];
-    include_personalization: number;
-    include_session_directory: number;
-    include_os_info: number;
-  },
-): AgentWithTools {
+export function createAgentRow(data: {
+  name: string;
+  description: string;
+  system_prompt: string;
+  tools: string[];
+  include_personalization: number;
+  include_session_directory: number;
+  include_os_info: number;
+}): AgentWithTools {
   const db = getDb();
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -640,9 +733,21 @@ export function createAgentRow(
   const tx = db.transaction(() => {
     db.run(
       "INSERT INTO agents (id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
-      [id, data.name, data.description, data.system_prompt, inc, incSd, incOs, now, now],
+      [
+        id,
+        data.name,
+        data.description,
+        data.system_prompt,
+        inc,
+        incSd,
+        incOs,
+        now,
+        now,
+      ],
     );
-    const ins = db.prepare("INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)");
+    const ins = db.prepare(
+      "INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)",
+    );
     data.tools.forEach((t, i) => ins.run(id, t, i));
   });
   tx();
@@ -683,10 +788,21 @@ export function updateAgentRow(
   const tx = db.transaction(() => {
     db.run(
       "UPDATE agents SET name = ?, description = ?, system_prompt = ?, include_personalization = ?, include_session_directory = ?, include_os_info = ?, updated_at = ? WHERE id = ?",
-      [data.name, data.description, data.system_prompt, inc, incSd, incOs, now, id],
+      [
+        data.name,
+        data.description,
+        data.system_prompt,
+        inc,
+        incSd,
+        incOs,
+        now,
+        id,
+      ],
     );
     db.run("DELETE FROM agent_tools WHERE agent_id = ?", [id]);
-    const ins = db.prepare("INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)");
+    const ins = db.prepare(
+      "INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)",
+    );
     data.tools.forEach((t, i) => ins.run(id, t, i));
   });
   tx();
@@ -705,7 +821,10 @@ export function deleteAgentRow(id: string): boolean {
     DEFAULT_CHAT_AGENT_KEY,
     row.name,
   ]);
-  db.run("UPDATE sessions SET agent_name = ? WHERE agent_name = ?", [fallback, row.name]);
+  db.run("UPDATE sessions SET agent_name = ? WHERE agent_name = ?", [
+    fallback,
+    row.name,
+  ]);
   const r = db.run("DELETE FROM agents WHERE id = ?", [id]);
   return r.changes > 0;
 }

@@ -17,7 +17,11 @@ export type Step = {
 };
 
 export type OnStepChange = (ctx: RunContext, step: Step) => void;
-export type OnStreamDelta = (contentDelta: string, thinkingDelta: string, agentName: string) => void;
+export type OnStreamDelta = (
+  contentDelta: string,
+  thinkingDelta: string,
+  agentName: string,
+) => void;
 
 export class RunContext {
   agentInstance: BaseAgent;
@@ -72,10 +76,9 @@ export class RunContext {
     return step;
   }
 
-  /** End the current (last running) step with a result. Fires onChange. */
-  endStep(result: string, thinking?: string): void {
-    const step = this._lastRunning();
-    if (!step) return;
+  /** End the given running step with a result. Fires onChange. */
+  endStep(step: Step, result: string, thinking?: string): void {
+    if (step.status !== "running" || !this._steps.includes(step)) return;
     step.status = "done";
     step.result = result;
     if (thinking) step.thinking = thinking;
@@ -83,18 +86,35 @@ export class RunContext {
     this._onChange?.(this, step);
   }
 
-  /** End the current step as an error. Fires onChange. */
-  failStep(error: string): void {
-    const step = this._lastRunning();
-    if (!step) return;
+  /** Mark the given step as failed. Fires onChange. */
+  failStep(step: Step, error: string): void {
+    if (step.status !== "running" || !this._steps.includes(step)) return;
     step.status = "error";
     step.error = error;
     step.endedAt = new Date().toISOString();
     this._onChange?.(this, step);
   }
 
-  /** Create a child RunContext for a nested agent, attached to the current step. */
-  createChild(agentInstance: BaseAgent, prompt: string): RunContext {
+  /**
+   * Error recovery when the caller did not keep a step handle (e.g. thrown from `run`).
+   * Prefer explicit `failStep(step, …)` in new code.
+   */
+  failLastRunningStep(error: string): void {
+    for (let i = this._steps.length - 1; i >= 0; i--) {
+      const s = this._steps[i];
+      if (s?.status === "running") {
+        this.failStep(s, error);
+        return;
+      }
+    }
+  }
+
+  /** Create a child RunContext for a nested agent, attached to `parentStep`. */
+  createChild(
+    agentInstance: BaseAgent,
+    prompt: string,
+    parentStep: Step,
+  ): RunContext {
     const child = new RunContext(
       agentInstance,
       prompt,
@@ -103,16 +123,19 @@ export class RunContext {
       this.signal,
       this.sessionDir,
     );
-    const step = this._lastRunning();
-    if (step) {
-      step.childContext = child;
+    if (parentStep.status === "running") {
+      parentStep.childContext = child;
     }
     return child;
   }
 
   /** The currently active step (last step with status "running"), or null. */
   get currentStep(): Step | null {
-    return this._lastRunning();
+    for (let i = this._steps.length - 1; i >= 0; i--) {
+      const s = this._steps[i];
+      if (s && s.status === "running") return s;
+    }
+    return null;
   }
 
   /** All steps (completed + current). */
@@ -127,14 +150,6 @@ export class RunContext {
       prompt: this.prompt,
       steps: this._steps.map((s) => this._stepSnapshot(s)),
     };
-  }
-
-  private _lastRunning(): Step | null {
-    for (let i = this._steps.length - 1; i >= 0; i--) {
-      const s = this._steps[i];
-      if (s && s.status === "running") return s;
-    }
-    return null;
   }
 
   private _stepBase(step: Step): Record<string, unknown> {
