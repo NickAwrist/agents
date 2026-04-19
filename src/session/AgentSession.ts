@@ -177,7 +177,6 @@ export class AgentSession extends EventEmitter {
     return result;
   }
 
-  /** Cumulative messages the agent keeps for the next Ollama call (user / assistant+tool_calls / tool). */
   /** Cumulative messages the agent keeps for the next Ollama call. */
   getModelMessages(): Array<Record<string, unknown>> {
     return this.generalAgent.history.map(
