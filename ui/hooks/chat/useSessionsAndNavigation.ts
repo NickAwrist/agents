@@ -153,10 +153,6 @@ export function useSessionsAndNavigation(p: Args) {
           : (p.ollamaModels[0]?.name ?? next);
       }
       setSelectedModel(next);
-      const an = stored?.agentName?.trim();
-      setSelectedSessionAgent(
-        an && an.length > 0 ? an : p.serverDefaultChatAgent,
-      );
       const sd =
         stored?.sessionDirectory != null &&
         String(stored.sessionDirectory).trim()
@@ -173,26 +169,13 @@ export function useSessionsAndNavigation(p: Args) {
     isEphemeral,
     p.ollamaModels,
     p.serverDefaultModel,
-    p.serverDefaultChatAgent,
     p.userSettingsRef,
     p.userSettingsDefaultModel,
   ]);
 
-  const handleSessionAgentChange = useCallback(
-    async (name: string) => {
-      setSelectedSessionAgent(name);
-      if (p.isEphemeralRef.current) return;
-      const sid = p.activeSessionIdRef.current;
-      if (!sid) return;
-      try {
-        await patchSessionApi(sid, { agentName: name });
-        await refreshSessions();
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [p.activeSessionIdRef, p.isEphemeralRef, refreshSessions],
-  );
+  const handleSessionAgentChange = useCallback((name: string) => {
+    setSelectedSessionAgent(name);
+  }, []);
 
   const setSessionDirectoryDraft = useCallback((next: string) => {
     setSessionDirectory(next);
@@ -403,9 +386,9 @@ export function useSessionsAndNavigation(p: Args) {
           ? p.serverDefaultModel
           : (p.ollamaModels[0]?.name ?? modelForNew);
       }
+      setSelectedSessionAgent(agentForNewChat);
       const { id } = await createSessionApi({
         model: modelForNew,
-        agentName: agentForNewChat,
       });
       await refreshSessions();
       pushSessionUrl(id);

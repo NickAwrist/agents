@@ -9,7 +9,6 @@ export type StoredChatSession = {
   history: Message[];
   modelMessages?: Array<Record<string, unknown>> | null;
   model?: string | null;
-  agentName?: string;
   sessionDirectory?: string | null;
 };
 
@@ -58,7 +57,6 @@ export async function fetchSession(id: string): Promise<StoredChatSession | null
           ? (s.modelMessages as Array<Record<string, unknown>>)
           : null,
     model: s.model == null ? null : String(s.model),
-    agentName: typeof s.agentName === "string" ? s.agentName : undefined,
     sessionDirectory:
       s.sessionDirectory === null || s.sessionDirectory === undefined
         ? null
@@ -68,7 +66,6 @@ export async function fetchSession(id: string): Promise<StoredChatSession | null
 
 export async function createSessionApi(opts?: {
   model?: string | null;
-  agentName?: string | null;
 }): Promise<{
   id: string;
   createdAt: number;
@@ -76,7 +73,6 @@ export async function createSessionApi(opts?: {
 }> {
   const body: Record<string, string> = {};
   if (opts?.model?.trim()) body.model = opts.model.trim();
-  if (opts?.agentName?.trim()) body.agentName = opts.agentName.trim();
   const res = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

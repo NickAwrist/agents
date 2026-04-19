@@ -4,14 +4,12 @@ import {
   type WireMessage,
   createSessionRow,
   deleteSessionRow,
-  getAgentByName,
   getMessagesForSession,
   getSessionById,
   listSessionSummaries,
   parseModelMessages,
   patchSessionRow,
   persistSessionMessages,
-  resolveSessionAgentName,
 } from "../db/index";
 import { pickFolderNative } from "../nativeFolderPicker";
 
@@ -73,25 +71,19 @@ router.get("/:id", (req, res) => {
     history,
     modelMessages: parseModelMessages(row.model_messages),
     model: row.model,
-    agentName: resolveSessionAgentName(row),
     sessionDirectory: row.session_directory ?? null,
   });
 });
 
 router.post("/", (req, res) => {
-  const body = req.body as { model?: unknown; agentName?: unknown };
+  const body = req.body as { model?: unknown };
   const id = crypto.randomUUID();
   const now = Date.now();
   const model =
     typeof body.model === "string" && body.model.trim()
       ? body.model.trim()
       : null;
-  const rawAgent =
-    typeof body.agentName === "string" && body.agentName.trim()
-      ? body.agentName.trim()
-      : null;
-  const agentName = rawAgent && getAgentByName(rawAgent) ? rawAgent : null;
-  createSessionRow(id, now, model, agentName);
+  createSessionRow(id, now, model);
   res.status(201).json({ id, createdAt: now, updatedAt: now });
 });
 
@@ -107,7 +99,6 @@ router.patch("/:id", (req, res) => {
     model?: unknown;
     modelMessages?: unknown;
     history?: unknown;
-    agentName?: unknown;
     sessionDirectory?: unknown;
   };
   const now = Date.now();
@@ -156,23 +147,6 @@ router.patch("/:id", (req, res) => {
         : Array.isArray(mm)
           ? (mm as Array<Record<string, unknown>>)
           : null;
-  }
-  if (
-    "agentName" in body &&
-    body.agentName !== undefined &&
-    !Array.isArray(body.history)
-  ) {
-    const a = body.agentName;
-    if (a === null) {
-      patch.agent_name = null;
-    } else if (typeof a === "string" && a.trim()) {
-      const t = a.trim();
-      if (!getAgentByName(t)) {
-        res.status(400).json({ error: "Unknown agent" });
-        return;
-      }
-      patch.agent_name = t;
-    }
   }
   if (
     "sessionDirectory" in body &&

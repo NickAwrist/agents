@@ -2,7 +2,11 @@ import os from "node:os";
 import type { RunContext } from "../RunContext";
 import { DEFAULT_CHAT_MODEL } from "../constants";
 import { getAgentByName } from "../db/index";
-import { type PromptContext, renderSystemPrompt } from "../prompts/render";
+import {
+  type PersonalizationFields,
+  type PromptContext,
+  renderSystemPrompt,
+} from "../prompts/render";
 import { AgentTool } from "../tools/AgentTool";
 import type { BaseTool } from "../tools/BaseTool";
 import { BashTool } from "../tools/bash";
@@ -52,6 +56,31 @@ function serverPromptContext(
     sessionDirectory: base?.sessionDirectory ?? toolSessionDir,
     os: base?.os ?? `${os.platform()} ${os.arch()} (${os.release()})`,
   };
+}
+
+/** PromptContext for chat turns: OS + session dir from server; personalization from request metadata. */
+export function buildServerChatPromptContext(opts: {
+  metadata?: {
+    name?: string | undefined;
+    location?: string | undefined;
+    preferredFormats?: string | undefined;
+  };
+  toolSessionDir?: string;
+}): PromptContext {
+  let personalization: PersonalizationFields | undefined;
+  if (opts.metadata !== undefined) {
+    const name = opts.metadata.name?.trim();
+    const location = opts.metadata.location?.trim();
+    const preferredFormats = opts.metadata.preferredFormats?.trim();
+    personalization = {};
+    if (name) personalization.name = name;
+    if (location) personalization.location = location;
+    if (preferredFormats) personalization.preferredFormats = preferredFormats;
+  }
+  return serverPromptContext(
+    personalization !== undefined ? { personalization } : {},
+    opts.toolSessionDir,
+  );
 }
 
 export const agentManager = {

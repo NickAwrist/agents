@@ -1,6 +1,4 @@
-import { agentNameExistsInDb } from "./agents/helpers";
 import { getDb } from "./connection";
-import { getDefaultChatAgent } from "./settings";
 import type { SessionRow, SessionSummaryRow, WireMessage } from "./types";
 
 export type { SessionRow, SessionSummaryRow, WireMessage } from "./types";
@@ -98,27 +96,15 @@ export function parseModelMessages(
   }
 }
 
-export function resolveSessionAgentName(row: SessionRow | null): string {
-  if (!row) return getDefaultChatAgent();
-  const a = row.agent_name?.trim();
-  if (a && agentNameExistsInDb(a)) return a;
-  return getDefaultChatAgent();
-}
-
 export function createSessionRow(
   id: string,
   now: number,
   model: string | null,
-  agentName?: string | null,
 ): SessionRow {
   const db = getDb();
-  const resolvedAgent =
-    typeof agentName === "string" && agentName.trim()
-      ? agentName.trim()
-      : getDefaultChatAgent();
   db.run(
-    "INSERT INTO sessions (id, created_at, updated_at, title, model, model_messages, agent_name) VALUES (?, ?, ?, NULL, ?, NULL, ?)",
-    [id, now, now, model, resolvedAgent],
+    "INSERT INTO sessions (id, created_at, updated_at, title, model, model_messages, agent_name) VALUES (?, ?, ?, NULL, ?, NULL, NULL)",
+    [id, now, now, model],
   );
   return {
     id,
@@ -127,7 +113,7 @@ export function createSessionRow(
     title: null,
     model,
     model_messages: null,
-    agent_name: resolvedAgent,
+    agent_name: null,
     session_directory: null,
   };
 }

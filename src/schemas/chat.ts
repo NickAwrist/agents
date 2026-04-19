@@ -12,6 +12,12 @@ export type WireMessageInput = z.infer<typeof WireMessageSchema>;
 
 const ModelMessageSchema = z.record(z.string(), z.unknown());
 
+export const ChatMetadataSchema = z.object({
+  name: z.string().optional(),
+  location: z.string().optional(),
+  preferredFormats: z.string().optional(),
+});
+
 export const ChatBodySchema = z.object({
   sessionId: z.string().min(1).optional(),
   message: z.string().min(1),
@@ -19,8 +25,8 @@ export const ChatBodySchema = z.object({
   model: z.string().optional(),
   modelMessages: z.array(ModelMessageSchema).nullable().optional(),
   ephemeral: z.boolean().optional(),
-  agentName: z.string().optional(),
-  systemPrompt: z.string(),
+  agentName: z.string().min(1),
+  metadata: ChatMetadataSchema.optional(),
   sessionDirectory: z.string().optional(),
 });
 

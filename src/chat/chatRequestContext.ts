@@ -1,10 +1,8 @@
 import type { Response } from "express";
+import { buildServerChatPromptContext } from "../agents/agentManager";
 import { DEFAULT_CHAT_MODEL } from "../constants";
-import {
-  type SessionRow,
-  getSessionById,
-  resolveSessionAgentName,
-} from "../db/index";
+import { type SessionRow, getAgentByName, getSessionById } from "../db/index";
+import type { PromptContext } from "../prompts/render";
 import { type ChatBody, ChatBodySchema } from "../schemas/chat";
 import { resolveEffectiveToolSessionDir } from "../sessionDirectory";
 
@@ -16,6 +14,7 @@ export type ChatTurnContext = {
   model: string;
   agentName: string;
   toolSessionDir?: string;
+  promptContext: PromptContext;
   persistedSession: SessionRow | null;
 };
 
@@ -53,9 +52,16 @@ export function buildTurnContext(
     }
   }
 
-  const agentName = ephemeral
-    ? body.agentName?.trim() || resolveSessionAgentName(null)
-    : resolveSessionAgentName(persistedSession);
+  const agentName = body.agentName.trim();
+  if (!getAgentByName(agentName)) {
+    res.status(400).json({ error: `Unknown agent: ${agentName}` });
+    return null;
+  }
+
+  const toolSessionDir = resolveEffectiveToolSessionDir(
+    body.sessionDirectory,
+    persistedSession?.session_directory,
+  );
 
   return {
     body,
@@ -63,10 +69,11 @@ export function buildTurnContext(
     sessionId,
     model: body.model?.trim() || DEFAULT_CHAT_MODEL,
     agentName,
-    toolSessionDir: resolveEffectiveToolSessionDir(
-      body.sessionDirectory,
-      persistedSession?.session_directory,
-    ),
+    toolSessionDir,
+    promptContext: buildServerChatPromptContext({
+      metadata: body.metadata,
+      toolSessionDir,
+    }),
     persistedSession,
   };
 }

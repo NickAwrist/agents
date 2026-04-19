@@ -18,7 +18,6 @@ export {
   parseModelMessages,
   patchSessionRow,
   persistSessionMessages,
-  resolveSessionAgentName,
   countMessagesForSession,
 } from "./sessions";
 export type {

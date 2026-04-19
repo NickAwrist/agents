@@ -277,17 +277,22 @@ export function useChatStreaming(p: Args) {
       try {
         let res: Response;
         try {
-          const systemPrompt = await renderCurrentSystemPrompt();
+          const u = p.userSettingsRef.current;
+          const metadata: Record<string, string> = {};
+          if (u.name?.trim()) metadata.name = u.name.trim();
+          if (u.location?.trim()) metadata.location = u.location.trim();
+          if (u.preferredFormats?.trim())
+            metadata.preferredFormats = u.preferredFormats.trim();
           const chatBody: Record<string, unknown> = {
             message: msg,
             history: priorMessages,
             model: p.selectedModel,
             modelMessages: modelMessagesPayload,
-            systemPrompt,
+            agentName: p.selectedSessionAgentRef.current,
+            ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
           };
           if (ephemeral) {
             chatBody.ephemeral = true;
-            chatBody.agentName = p.selectedSessionAgentRef.current;
           } else {
             chatBody.sessionId = turnSessionId;
           }

@@ -94,7 +94,7 @@ function buildSession(ctx: ChatTurnContext): AgentSession {
   const session = new AgentSession(crypto.randomUUID(), {
     model: ctx.model,
     agentName: ctx.agentName,
-    systemPrompt: ctx.body.systemPrompt,
+    promptContext: ctx.promptContext,
     toolSessionDir: ctx.toolSessionDir,
   });
   session.restoreFromPersistence({

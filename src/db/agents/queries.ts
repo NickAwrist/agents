@@ -129,10 +129,6 @@ export function deleteAgentRow(id: string): boolean {
     DEFAULT_CHAT_AGENT_KEY,
     row.name,
   ]);
-  db.run("UPDATE sessions SET agent_name = ? WHERE agent_name = ?", [
-    fallback,
-    row.name,
-  ]);
   const r = db.run("DELETE FROM agents WHERE id = ?", [id]);
   return r.changes > 0;
 }
