@@ -1,9 +1,10 @@
 import { Bot, Save, Trash2, Wrench } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { type Dispatch, type SetStateAction, useRef } from "react";
+import { PROMPT_PLACEHOLDER_LIST } from "../../../src/prompts/render";
 import type { AgentData } from "../../persist/agents";
 import { cx, primaryButton, secondaryButton } from "../../styles";
-import type { AgentEditorState } from "./types";
 import { canDeleteAgent } from "./agentsPageUtils";
+import type { AgentEditorState } from "./types";
 
 type Props = {
   isNew: boolean;
@@ -21,6 +22,23 @@ type Props = {
   onRequestDeleteAgent: (a: AgentData) => void;
 };
 
+function insertAtCaret(
+  textarea: HTMLTextAreaElement | null,
+  current: string,
+  token: string,
+): { next: string; caret: number } {
+  const fallback = `${current}${current.length && !current.endsWith("\n") ? "\n\n" : ""}${token}`;
+  if (!textarea) {
+    return { next: fallback, caret: fallback.length };
+  }
+  const start = textarea.selectionStart ?? current.length;
+  const end = textarea.selectionEnd ?? current.length;
+  const before = current.slice(0, start);
+  const after = current.slice(end);
+  const next = `${before}${token}${after}`;
+  return { next, caret: before.length + token.length };
+}
+
 export function AgentEditor({
   isNew,
   selectedAgent,
@@ -36,6 +54,23 @@ export function AgentEditor({
   onToggleTool,
   onRequestDeleteAgent,
 }: Props) {
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const insertPlaceholder = (token: string) => {
+    const { next, caret } = insertAtCaret(
+      promptRef.current,
+      editor.system_prompt,
+      token,
+    );
+    setEditor((prev) => ({ ...prev, system_prompt: next }));
+    queueMicrotask(() => {
+      const el = promptRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    });
+  };
+
   return (
     <div className="ui-animate-fade-in mx-auto max-w-2xl px-6 py-6">
       <div className="mb-6 flex items-center justify-between">
@@ -57,7 +92,9 @@ export function AgentEditor({
 
       <div className="flex flex-col gap-5">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[0.75rem] font-medium text-muted-foreground">Name</span>
+          <span className="text-[0.75rem] font-medium text-muted-foreground">
+            Name
+          </span>
           <input
             type="text"
             value={editor.name}
@@ -68,10 +105,14 @@ export function AgentEditor({
         </label>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-[0.75rem] font-medium text-muted-foreground">Description</span>
+          <span className="text-[0.75rem] font-medium text-muted-foreground">
+            Description
+          </span>
           <textarea
             value={editor.description}
-            onChange={(e) => setEditor((p) => ({ ...p, description: e.target.value }))}
+            onChange={(e) =>
+              setEditor((p) => ({ ...p, description: e.target.value }))
+            }
             placeholder="What this agent does..."
             rows={2}
             className="rounded-lg border border-border-subtle bg-background px-3 py-2 text-[0.8125rem] text-foreground outline-none transition-colors focus:border-border placeholder:text-muted-foreground/50"
@@ -79,67 +120,50 @@ export function AgentEditor({
           />
         </label>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[0.75rem] font-medium text-muted-foreground">System Prompt</span>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[0.75rem] font-medium text-muted-foreground">
+            System Prompt
+          </span>
           <textarea
+            ref={promptRef}
             value={editor.system_prompt}
-            onChange={(e) => setEditor((p) => ({ ...p, system_prompt: e.target.value }))}
+            onChange={(e) =>
+              setEditor((p) => ({ ...p, system_prompt: e.target.value }))
+            }
             placeholder="Instructions for the agent..."
             rows={6}
-            className="rounded-lg border border-border-subtle bg-background px-3 py-2.5 text-[0.8125rem] leading-[1.6] text-foreground outline-none transition-colors focus:border-border placeholder:text-muted-foreground/50"
+            className="rounded-lg border border-border-subtle bg-background px-3 py-2.5 text-[0.8125rem] leading-[1.6] text-foreground outline-none transition-colors focus:border-border placeholder:text-muted-foreground/50 font-mono"
             style={{ resize: "vertical" }}
           />
-        </label>
-
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border-subtle bg-muted/15 px-3 py-2.5">
-          <input
-            type="checkbox"
-            className="mt-0.5 size-4 shrink-0 rounded border-border-subtle accent-accent"
-            checked={editor.include_personalization !== 0}
-            onChange={(e) =>
-              setEditor((p) => ({ ...p, include_personalization: e.target.checked ? 1 : 0 }))
-            }
-          />
-          <span className="text-[0.8125rem] leading-snug text-foreground">
-            <span className="font-medium">Include personalization</span>
-            <span className="mt-0.5 block text-[0.75rem] font-normal text-muted-foreground">
-              When enabled, this chat agent receives your name, location, and preferred response format from Settings.
+          <div className="mt-1 flex flex-col gap-1.5 rounded-md border border-border-subtle bg-muted/15 px-3 py-2">
+            <span className="text-[0.7rem] font-medium text-muted-foreground">
+              Placeholders (click to insert)
             </span>
-          </span>
-        </label>
-
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border-subtle bg-muted/15 px-3 py-2.5">
-          <input
-            type="checkbox"
-            className="mt-0.5 size-4 shrink-0 rounded border-border-subtle accent-accent"
-            checked={editor.include_session_directory !== 0}
-            onChange={(e) =>
-              setEditor((p) => ({ ...p, include_session_directory: e.target.checked ? 1 : 0 }))
-            }
-          />
-          <span className="text-[0.8125rem] leading-snug text-foreground">
-            <span className="font-medium">Include session directory</span>
-            <span className="mt-0.5 block text-[0.75rem] font-normal text-muted-foreground">
-              When enabled, this agent receives the chat session working directory in its system prompt. Tools always use
-              the session directory regardless of this setting.
-            </span>
-          </span>
-        </label>
-
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border-subtle bg-muted/15 px-3 py-2.5">
-          <input
-            type="checkbox"
-            className="mt-0.5 size-4 shrink-0 rounded border-border-subtle accent-accent"
-            checked={editor.include_os_info !== 0}
-            onChange={(e) => setEditor((p) => ({ ...p, include_os_info: e.target.checked ? 1 : 0 }))}
-          />
-          <span className="text-[0.8125rem] leading-snug text-foreground">
-            <span className="font-medium">Include OS info</span>
-            <span className="mt-0.5 block text-[0.75rem] font-normal text-muted-foreground">
-              When enabled, this agent receives the auto-detected server OS in its system prompt.
-            </span>
-          </span>
-        </label>
+            <div className="flex flex-wrap gap-1.5">
+              {PROMPT_PLACEHOLDER_LIST.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  title={p.description}
+                  onClick={() => insertPlaceholder(p.token)}
+                  className="rounded-md border border-border-subtle bg-background px-2 py-0.5 font-mono text-[0.7rem] text-foreground transition-colors hover:border-border hover:bg-accent-soft-strong"
+                >
+                  {p.token}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-col gap-0.5 text-[0.68rem] leading-snug text-muted-foreground">
+              {PROMPT_PLACEHOLDER_LIST.map((p) => (
+                <span key={p.key}>
+                  <code className="font-mono text-[0.7rem] text-foreground/80">
+                    {p.token}
+                  </code>{" "}
+                  — {p.description}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
 
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 flex items-center gap-1.5 text-[0.75rem] font-medium text-muted-foreground">
@@ -209,7 +233,11 @@ export function AgentEditor({
             Save
           </button>
           {!isNew && (
-            <button type="button" onClick={onCancelEdit} className={secondaryButton}>
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              className={secondaryButton}
+            >
               Cancel
             </button>
           )}

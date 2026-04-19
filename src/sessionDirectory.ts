@@ -38,12 +38,6 @@ export function resolveEffectiveToolSessionDir(
   return expandUserPath(raw);
 }
 
-export function formatSessionDirectoryPromptBlock(
-  absResolvedPath: string,
-): string {
-  return `--- Session context ---\nSession directory: ${absResolvedPath}`;
-}
-
 export type ResolveToolPathOptions = {
   /** When true and `sessionDir` is set, reject paths outside the session directory. */
   enforceSandbox?: boolean;

@@ -9,6 +9,36 @@ import {
 
 const agentsRoutes = Router();
 
+type AgentWriteBody = {
+  name?: unknown;
+  description?: unknown;
+  system_prompt?: unknown;
+  tools?: unknown;
+};
+
+function parseAgentBody(body: AgentWriteBody):
+  | {
+      ok: true;
+      data: {
+        name: string;
+        description: string;
+        system_prompt: string;
+        tools: string[];
+      };
+    }
+  | { ok: false; error: string } {
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) return { ok: false, error: "name is required" };
+  const description =
+    typeof body.description === "string" ? body.description.trim() : "";
+  const system_prompt =
+    typeof body.system_prompt === "string" ? body.system_prompt.trim() : "";
+  const tools = Array.isArray(body.tools)
+    ? body.tools.filter((t): t is string => typeof t === "string")
+    : [];
+  return { ok: true, data: { name, description, system_prompt, tools } };
+}
+
 agentsRoutes.get("/", (_req, res) => {
   res.json({ agents: listAgents() });
 });
@@ -23,44 +53,13 @@ agentsRoutes.get("/:id", (req, res) => {
 });
 
 agentsRoutes.post("/", (req, res) => {
-  const {
-    name,
-    description,
-    system_prompt,
-    tools,
-    include_personalization,
-    include_session_directory,
-    include_os_info,
-  } = req.body as {
-    name?: string;
-    description?: string;
-    system_prompt?: string;
-    tools?: string[];
-    include_personalization?: unknown;
-    include_session_directory?: unknown;
-    include_os_info?: unknown;
-  };
-  if (!name?.trim()) {
-    res.status(400).json({ error: "name is required" });
+  const parsed = parseAgentBody(req.body as AgentWriteBody);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
     return;
   }
-  const inc =
-    include_personalization === false || include_personalization === 0 ? 0 : 1;
-  const incSd =
-    include_session_directory === true || include_session_directory === 1
-      ? 1
-      : 0;
-  const incOs = include_os_info === true || include_os_info === 1 ? 1 : 0;
   try {
-    const agent = createAgentRow({
-      name: name.trim(),
-      description: description?.trim() ?? "",
-      system_prompt: system_prompt?.trim() ?? "",
-      tools: Array.isArray(tools) ? tools : [],
-      include_personalization: inc,
-      include_session_directory: incSd,
-      include_os_info: incOs,
-    });
+    const agent = createAgentRow(parsed.data);
     res.status(201).json(agent);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "";
@@ -73,44 +72,13 @@ agentsRoutes.post("/", (req, res) => {
 });
 
 agentsRoutes.put("/:id", (req, res) => {
-  const {
-    name,
-    description,
-    system_prompt,
-    tools,
-    include_personalization,
-    include_session_directory,
-    include_os_info,
-  } = req.body as {
-    name?: string;
-    description?: string;
-    system_prompt?: string;
-    tools?: string[];
-    include_personalization?: unknown;
-    include_session_directory?: unknown;
-    include_os_info?: unknown;
-  };
-  if (!name?.trim()) {
-    res.status(400).json({ error: "name is required" });
+  const parsed = parseAgentBody(req.body as AgentWriteBody);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
     return;
   }
-  const inc =
-    include_personalization === false || include_personalization === 0 ? 0 : 1;
-  const incSd =
-    include_session_directory === true || include_session_directory === 1
-      ? 1
-      : 0;
-  const incOs = include_os_info === true || include_os_info === 1 ? 1 : 0;
   try {
-    const ok = updateAgentRow(req.params.id, {
-      name: name.trim(),
-      description: description?.trim() ?? "",
-      system_prompt: system_prompt?.trim() ?? "",
-      tools: Array.isArray(tools) ? tools : [],
-      include_personalization: inc,
-      include_session_directory: incSd,
-      include_os_info: incOs,
-    });
+    const ok = updateAgentRow(req.params.id, parsed.data);
     if (!ok) {
       res.status(404).json({ error: "Agent not found" });
       return;

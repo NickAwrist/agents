@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  type AgentData,
+  createAgentApi,
+  deleteAgentApi,
   fetchAgents,
   fetchBuiltinTools,
   fetchDefaultChatAgent,
   putDefaultChatAgentApi,
-  createAgentApi,
   updateAgentApi,
-  deleteAgentApi,
-  type AgentData,
 } from "../../persist/agents";
+import {
+  canDeleteAgent,
+  editorFromAgent,
+  editorsEqual,
+  emptyEditor,
+} from "./agentsPageUtils";
 import type { AgentEditorState } from "./types";
-import { canDeleteAgent, editorFromAgent, editorsEqual, emptyEditor } from "./agentsPageUtils";
 
 export function useAgentsPage() {
   const [agents, setAgents] = useState<AgentData[]>([]);
@@ -18,12 +23,17 @@ export function useAgentsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [editor, setEditor] = useState<AgentEditorState>(emptyEditor());
-  const [baselineEditor, setBaselineEditor] = useState<AgentEditorState>(() => emptyEditor());
+  const [baselineEditor, setBaselineEditor] = useState<AgentEditorState>(() =>
+    emptyEditor(),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [defaultDraft, setDefaultDraft] = useState("general_agent");
   const [defaultSaving, setDefaultSaving] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const menuWrapRef = useRef<HTMLDivElement>(null);
@@ -54,7 +64,9 @@ export function useAgentsPage() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menuOpenId]);
 
-  const otherAgentNames = agents.filter((a) => a.id !== selectedId).map((a) => a.name);
+  const otherAgentNames = agents
+    .filter((a) => a.id !== selectedId)
+    .map((a) => a.name);
 
   const selectAgent = (a: AgentData) => {
     setSelectedId(a.id);
@@ -77,7 +89,9 @@ export function useAgentsPage() {
   const toggleTool = (tool: string) => {
     setEditor((prev) => ({
       ...prev,
-      tools: prev.tools.includes(tool) ? prev.tools.filter((t) => t !== tool) : [...prev.tools, tool],
+      tools: prev.tools.includes(tool)
+        ? prev.tools.filter((t) => t !== tool)
+        : [...prev.tools, tool],
     }));
   };
 

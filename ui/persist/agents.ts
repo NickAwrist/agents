@@ -3,13 +3,17 @@ export type AgentData = {
   name: string;
   description: string;
   system_prompt: string;
-  include_personalization: number;
-  include_session_directory: number;
-  include_os_info: number;
   is_default: number;
   tools: string[];
   created_at: number;
   updated_at: number;
+};
+
+export type AgentWriteBody = {
+  name: string;
+  description: string;
+  system_prompt: string;
+  tools: string[];
 };
 
 export async function fetchAgents(): Promise<AgentData[]> {
@@ -25,15 +29,7 @@ export async function fetchAgent(id: string): Promise<AgentData> {
   return res.json();
 }
 
-export async function createAgentApi(body: {
-  name: string;
-  description: string;
-  system_prompt: string;
-  tools: string[];
-  include_personalization: number;
-  include_session_directory: number;
-  include_os_info: number;
-}): Promise<AgentData> {
+export async function createAgentApi(body: AgentWriteBody): Promise<AgentData> {
   const res = await fetch("/api/agents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -48,15 +44,7 @@ export async function createAgentApi(body: {
 
 export async function updateAgentApi(
   id: string,
-  body: {
-    name: string;
-    description: string;
-    system_prompt: string;
-    tools: string[];
-    include_personalization: number;
-    include_session_directory: number;
-    include_os_info: number;
-  },
+  body: AgentWriteBody,
 ): Promise<void> {
   const res = await fetch(`/api/agents/${id}`, {
     method: "PUT",
@@ -91,7 +79,9 @@ export async function fetchDefaultChatAgent(): Promise<string> {
   return typeof data.agentName === "string" ? data.agentName : "general_agent";
 }
 
-export async function putDefaultChatAgentApi(agentName: string): Promise<string> {
+export async function putDefaultChatAgentApi(
+  agentName: string,
+): Promise<string> {
   const res = await fetch("/api/settings/default-chat-agent", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

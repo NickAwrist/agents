@@ -23,12 +23,12 @@ export async function pickFolderNative(): Promise<string | null> {
 
 async function pickWindows(): Promise<string | null> {
   const script = `
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = "Choose session working directory"
-if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { exit 2 }
-Write-Output $dialog.SelectedPath
-exit 0
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description = "Choose session working directory"
+    if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { exit 2 }
+    Write-Output $dialog.SelectedPath
+    exit 0
 `.trim();
 
   const scriptPath = join(

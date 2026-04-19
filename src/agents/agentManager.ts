@@ -1,8 +1,8 @@
+import os from "node:os";
 import type { RunContext } from "../RunContext";
 import { DEFAULT_CHAT_MODEL } from "../constants";
 import { getAgentByName } from "../db/index";
-import { formatSessionDirectoryPromptBlock } from "../sessionDirectory";
-import { getOsInfoBlock } from "../systemInfo";
+import { type PromptContext, renderSystemPrompt } from "../prompts/render";
 import { AgentTool } from "../tools/AgentTool";
 import type { BaseTool } from "../tools/BaseTool";
 import { BashTool } from "../tools/bash";
@@ -31,15 +31,35 @@ export const BUILTIN_TOOLS = [
 ] as const;
 
 export type CreateAgentOptions = {
-  personalizationBlock?: string | null;
-  /** Resolved absolute directory tools use; drives optional session prompt block. */
+  /**
+   * Pre-rendered system prompt. When provided it is used verbatim (plus
+   * appended core directives). When omitted the stored template is rendered
+   * on the server using `promptContext` — used for subagent invocations.
+   */
+  systemPrompt?: string;
+  /** Resolved absolute directory tools use; also drives `{{SESSION_DIRECTORY}}`. */
   toolSessionDir?: string;
+  /** Values to fill `{{PLACEHOLDERS}}` when `systemPrompt` is not provided. */
+  promptContext?: PromptContext;
 };
 
+function serverPromptContext(
+  base: PromptContext | undefined,
+  toolSessionDir: string | undefined,
+): PromptContext {
+  return {
+    personalization: base?.personalization,
+    sessionDirectory: base?.sessionDirectory ?? toolSessionDir,
+    os: base?.os ?? `${os.platform()} ${os.arch()} (${os.release()})`,
+  };
+}
+
 export const agentManager = {
+  /** Build a subagent that inherits the parent run's prompt context + session dir. */
   createAgentForContext(agentName: string, ctx?: RunContext): BaseAgent {
     const agent = this.createAgent(agentName, {
       toolSessionDir: ctx?.sessionDir,
+      promptContext: ctx?.promptContext,
     });
     const parentModel = ctx?.agentInstance?.model;
     if (typeof parentModel === "string" && parentModel.length > 0) {
@@ -51,9 +71,6 @@ export const agentManager = {
   },
 
   createAgent(agentName: string, opts?: CreateAgentOptions): BaseAgent {
-    const personalizationBlock = opts?.personalizationBlock;
-    const toolSessionDir = opts?.toolSessionDir;
-
     const config = getAgentByName(agentName);
     if (!config) {
       throw new Error(
@@ -61,25 +78,20 @@ export const agentManager = {
       );
     }
 
-    const sessionContextBlock =
-      config.include_session_directory &&
-      typeof toolSessionDir === "string" &&
-      toolSessionDir.length > 0
-        ? formatSessionDirectoryPromptBlock(toolSessionDir)
-        : undefined;
-    const osContextBlock = config.include_os_info
-      ? getOsInfoBlock()
-      : undefined;
+    const finalPrompt =
+      typeof opts?.systemPrompt === "string" && opts.systemPrompt.length > 0
+        ? opts.systemPrompt
+        : renderSystemPrompt(
+            config.system_prompt,
+            serverPromptContext(opts?.promptContext, opts?.toolSessionDir),
+          );
 
     const agent = new BaseAgent(
       config.name,
       config.description,
       undefined,
       undefined,
-      config.system_prompt,
-      personalizationBlock ?? undefined,
-      sessionContextBlock,
-      osContextBlock,
+      finalPrompt,
     );
 
     if (config.tools.length > 0) {

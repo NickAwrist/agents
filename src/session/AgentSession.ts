@@ -3,35 +3,85 @@ import { RunContext } from "../RunContext";
 import type { BaseAgent } from "../agents/BaseAgent";
 import { agentManager } from "../agents/agentManager";
 import { logger } from "../logger";
+import type { PromptContext } from "../prompts/render";
 
 export type HistoryWireStep = Record<string, unknown>;
 
+export type SessionMessage = {
+  role: string;
+  content: string;
+  steps?: HistoryWireStep[];
+};
+
+export type SessionStepEvent = {
+  step: HistoryWireStep;
+  steps: HistoryWireStep[];
+};
+
+export type SessionStreamDeltaEvent = {
+  contentDelta: string;
+  thinkingDelta: string;
+  agentName: string;
+};
+
+export type SessionAbortedEvent = {
+  result: string;
+  steps: HistoryWireStep[];
+  history: SessionMessage[];
+  modelMessages: Array<Record<string, unknown>> | null;
+};
+
+type SessionEvents = {
+  step: SessionStepEvent;
+  stream_delta: SessionStreamDeltaEvent;
+  aborted: SessionAbortedEvent;
+};
+
+export type AgentSessionOptions = {
+  model?: string;
+  agentName?: string;
+  /** Pre-rendered system prompt from the chat request. Takes precedence over `promptContext`. */
+  systemPrompt?: string;
+  /** Values for `{{PLACEHOLDERS}}` passed to subagents via `RunContext`. */
+  promptContext?: PromptContext;
+  toolSessionDir?: string;
+};
+
 export class AgentSession extends EventEmitter {
   public sessionId: string;
-  public history: {
-    role: string;
-    content: string;
-    steps?: HistoryWireStep[];
-  }[] = [];
+  public history: SessionMessage[] = [];
   private generalAgent: BaseAgent;
   private readonly toolSessionDir?: string;
+  private readonly promptContext?: PromptContext;
 
-  constructor(
-    sessionId: string,
-    options?: {
-      model?: string;
-      agentName?: string;
-      personalizationBlock?: string | null;
-      toolSessionDir?: string;
-    },
-  ) {
+  override on<K extends keyof SessionEvents>(
+    event: K,
+    listener: (payload: SessionEvents[K]) => void,
+  ): this;
+  override on(event: string, listener: (...args: unknown[]) => void): this;
+  override on(event: string, listener: (...args: unknown[]) => void): this {
+    return super.on(event, listener as (...args: unknown[]) => void);
+  }
+
+  override off<K extends keyof SessionEvents>(
+    event: K,
+    listener: (payload: SessionEvents[K]) => void,
+  ): this;
+  override off(event: string, listener: (...args: unknown[]) => void): this;
+  override off(event: string, listener: (...args: unknown[]) => void): this {
+    return super.off(event, listener as (...args: unknown[]) => void);
+  }
+
+  constructor(sessionId: string, options?: AgentSessionOptions) {
     super();
     this.sessionId = sessionId;
     this.toolSessionDir = options?.toolSessionDir;
+    this.promptContext = options?.promptContext;
     const agentName = options?.agentName?.trim() || "general_agent";
     this.generalAgent = agentManager.createAgent(agentName, {
-      personalizationBlock: options?.personalizationBlock,
+      systemPrompt: options?.systemPrompt,
       toolSessionDir: options?.toolSessionDir,
+      promptContext: options?.promptContext,
     });
     const m = options?.model?.trim();
     if (m) this.generalAgent.model = m;
@@ -82,6 +132,7 @@ export class AgentSession extends EventEmitter {
       },
       signal,
       this.toolSessionDir,
+      this.promptContext,
     );
 
     let result = "Error running agent.";
@@ -119,7 +170,7 @@ export class AgentSession extends EventEmitter {
         result,
         steps: ctx.wireSteps(),
         history: this.history,
-        modelMessages: this.getModelMessagesForDebug(),
+        modelMessages: this.getModelMessages(),
       });
     }
 
@@ -127,7 +178,8 @@ export class AgentSession extends EventEmitter {
   }
 
   /** Cumulative messages the agent keeps for the next Ollama call (user / assistant+tool_calls / tool). */
-  getModelMessagesForDebug(): Array<Record<string, unknown>> {
+  /** Cumulative messages the agent keeps for the next Ollama call. */
+  getModelMessages(): Array<Record<string, unknown>> {
     return this.generalAgent.history.map(
       (msg: { role: string; content?: string; tool_calls?: unknown }) => {
         const row: Record<string, unknown> = {
@@ -138,9 +190,5 @@ export class AgentSession extends EventEmitter {
         return row;
       },
     );
-  }
-
-  getSystemPromptForDebug(): string {
-    return this.generalAgent.systemPrompt ?? "";
   }
 }

@@ -63,12 +63,16 @@ export function AgentList({
                 }}
                 className={cx(
                   "flex min-w-0 items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-150",
-                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  active
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <Bot size={15} className="shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[0.8125rem] font-medium">{a.name}</div>
+                  <div className="truncate text-[0.8125rem] font-medium">
+                    {a.name}
+                  </div>
                   <div className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">
                     {a.description || "No description"}
                   </div>
@@ -83,7 +87,8 @@ export function AgentList({
                     type="button"
                     className={cx(
                       "inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.94] active:bg-muted/70 max-[700px]:opacity-100",
-                      menuOpenId === a.id && "bg-muted text-foreground md:opacity-100",
+                      menuOpenId === a.id &&
+                        "bg-muted text-foreground md:opacity-100",
                     )}
                     aria-expanded={menuOpenId === a.id}
                     aria-haspopup="menu"

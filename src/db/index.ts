@@ -25,17 +25,6 @@ function migrateSessionsAgentColumn(db: Database) {
   }
 }
 
-function migrateAgentsIncludePersonalizationColumn(db: Database) {
-  const cols = db.query("PRAGMA table_info(agents)").all() as {
-    name: string;
-  }[];
-  if (!cols.some((c) => c.name === "include_personalization")) {
-    db.run(
-      "ALTER TABLE agents ADD COLUMN include_personalization INTEGER NOT NULL DEFAULT 1",
-    );
-  }
-}
-
 function migrateSessionsDirectoryColumn(db: Database) {
   const cols = db.query("PRAGMA table_info(sessions)").all() as {
     name: string;
@@ -45,19 +34,61 @@ function migrateSessionsDirectoryColumn(db: Database) {
   }
 }
 
-function migrateAgentsSessionDirAndOsColumns(db: Database) {
+/**
+ * One-shot migration from the old `include_personalization` / `include_session_directory` /
+ * `include_os_info` flags to inline `{{PLACEHOLDER}}` tokens in `system_prompt`.
+ */
+function migrateAgentsInlinePlaceholders(db: Database) {
   const cols = db.query("PRAGMA table_info(agents)").all() as {
     name: string;
   }[];
-  if (!cols.some((c) => c.name === "include_session_directory")) {
-    db.run(
-      "ALTER TABLE agents ADD COLUMN include_session_directory INTEGER NOT NULL DEFAULT 0",
-    );
+  const hasAny =
+    cols.some((c) => c.name === "include_personalization") ||
+    cols.some((c) => c.name === "include_session_directory") ||
+    cols.some((c) => c.name === "include_os_info");
+  if (!hasAny) return;
+
+  const rows = db
+    .query(
+      "SELECT id, system_prompt, include_personalization, include_session_directory, include_os_info FROM agents",
+    )
+    .all() as Array<{
+    id: string;
+    system_prompt: string;
+    include_personalization: number | null;
+    include_session_directory: number | null;
+    include_os_info: number | null;
+  }>;
+
+  const update = db.prepare("UPDATE agents SET system_prompt = ? WHERE id = ?");
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      const parts: string[] = [r.system_prompt ?? ""];
+      const has = (tok: string) => parts[0]!.includes(tok);
+      if (r.include_personalization && !has("{{PERSONALIZATION}}")) {
+        parts.push("{{PERSONALIZATION}}");
+      }
+      if (r.include_session_directory && !has("{{SESSION_DIRECTORY}}")) {
+        parts.push("{{SESSION_DIRECTORY}}");
+      }
+      if (r.include_os_info && !has("{{OS}}")) {
+        parts.push("{{OS}}");
+      }
+      if (parts.length > 1) {
+        update.run(parts.filter((s) => s.length > 0).join("\n\n"), r.id);
+      }
+    }
+  });
+  tx();
+
+  if (cols.some((c) => c.name === "include_personalization")) {
+    db.run("ALTER TABLE agents DROP COLUMN include_personalization");
   }
-  if (!cols.some((c) => c.name === "include_os_info")) {
-    db.run(
-      "ALTER TABLE agents ADD COLUMN include_os_info INTEGER NOT NULL DEFAULT 0",
-    );
+  if (cols.some((c) => c.name === "include_session_directory")) {
+    db.run("ALTER TABLE agents DROP COLUMN include_session_directory");
+  }
+  if (cols.some((c) => c.name === "include_os_info")) {
+    db.run("ALTER TABLE agents DROP COLUMN include_os_info");
   }
 }
 
@@ -148,8 +179,7 @@ export function getDb(): Database {
 
   migrateSessionsAgentColumn(db);
   migrateSessionsDirectoryColumn(db);
-  migrateAgentsIncludePersonalizationColumn(db);
-  migrateAgentsSessionDirAndOsColumns(db);
+  migrateAgentsInlinePlaceholders(db);
   seedDefaultAgents(db);
   ensureDefaultChatAgentSetting(db);
 
@@ -514,9 +544,6 @@ export type AgentRow = {
   name: string;
   description: string;
   system_prompt: string;
-  include_personalization: number;
-  include_session_directory: number;
-  include_os_info: number;
   is_default: number;
   created_at: number;
   updated_at: number;
@@ -529,9 +556,6 @@ const DEFAULT_AGENTS: Array<{
   description: string;
   system_prompt: string;
   tools: string[];
-  include_personalization: number;
-  include_session_directory: number;
-  include_os_info: number;
 }> = [
   {
     name: "general_agent",
@@ -552,10 +576,9 @@ const DEFAULT_AGENTS: Array<{
       "- Be concise. Avoid restating entire tool output when a short summary and the key result suffice.",
       "- When presenting code, file contents, or command output, include the actual content — do not describe it abstractly.",
       "</response_rules>",
+      "",
+      "{{PERSONALIZATION}}",
     ].join("\n"),
-    include_personalization: 1,
-    include_session_directory: 0,
-    include_os_info: 0,
   },
   {
     name: "computer_agent",
@@ -578,10 +601,11 @@ const DEFAULT_AGENTS: Array<{
       "- When asked to execute a command: include the complete stdout/stderr output.",
       "- When asked to perform an action (install, move, delete): confirm what was done and include any relevant output that proves success or shows failure.",
       "</output_rules>",
+      "",
+      "{{SESSION_DIRECTORY}}",
+      "",
+      "{{OS}}",
     ].join("\n"),
-    include_personalization: 0,
-    include_session_directory: 1,
-    include_os_info: 1,
   },
   {
     name: "coding_agent",
@@ -620,10 +644,11 @@ const DEFAULT_AGENTS: Array<{
       "- When asked to read or analyze code: include the actual code, findings, or data in your response. The orchestrator cannot see your tool results — only your final text response.",
       "- When asked to implement a change: confirm what files were created/modified, and include the verification results (e.g., tsc output).",
       "</output_rules>",
+      "",
+      "{{SESSION_DIRECTORY}}",
+      "",
+      "{{OS}}",
     ].join("\n"),
-    include_personalization: 0,
-    include_session_directory: 1,
-    include_os_info: 1,
   },
 ];
 
@@ -635,7 +660,7 @@ function seedDefaultAgents(db: Database) {
 
   const now = Date.now();
   const insertAgent = db.prepare(
-    "INSERT INTO agents (id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+    "INSERT INTO agents (id, name, description, system_prompt, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
   );
   const insertTool = db.prepare(
     "INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)",
@@ -644,17 +669,7 @@ function seedDefaultAgents(db: Database) {
   const tx = db.transaction(() => {
     for (const a of DEFAULT_AGENTS) {
       const id = crypto.randomUUID();
-      insertAgent.run(
-        id,
-        a.name,
-        a.description,
-        a.system_prompt,
-        a.include_personalization,
-        a.include_session_directory,
-        a.include_os_info,
-        now,
-        now,
-      );
+      insertAgent.run(id, a.name, a.description, a.system_prompt, now, now);
       a.tools.forEach((t, i) => insertTool.run(id, t, i));
     }
   });
@@ -665,7 +680,7 @@ export function listAgents(): AgentWithTools[] {
   const db = getDb();
   const rows = db
     .query(
-      "SELECT id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at FROM agents ORDER BY created_at ASC",
+      "SELECT id, name, description, system_prompt, is_default, created_at, updated_at FROM agents ORDER BY created_at ASC",
     )
     .all() as AgentRow[];
   const toolStmt = db.query(
@@ -683,7 +698,7 @@ export function getAgentById(id: string): AgentWithTools | null {
   const db = getDb();
   const row = db
     .query(
-      "SELECT id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at FROM agents WHERE id = ?",
+      "SELECT id, name, description, system_prompt, is_default, created_at, updated_at FROM agents WHERE id = ?",
     )
     .get(id) as AgentRow | null;
   if (!row) return null;
@@ -701,7 +716,7 @@ export function getAgentByName(name: string): AgentWithTools | null {
   const db = getDb();
   const row = db
     .query(
-      "SELECT id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at FROM agents WHERE name = ?",
+      "SELECT id, name, description, system_prompt, is_default, created_at, updated_at FROM agents WHERE name = ?",
     )
     .get(name) as AgentRow | null;
   if (!row) return null;
@@ -720,30 +735,14 @@ export function createAgentRow(data: {
   description: string;
   system_prompt: string;
   tools: string[];
-  include_personalization: number;
-  include_session_directory: number;
-  include_os_info: number;
 }): AgentWithTools {
   const db = getDb();
   const id = crypto.randomUUID();
   const now = Date.now();
-  const inc = data.include_personalization ? 1 : 0;
-  const incSd = data.include_session_directory ? 1 : 0;
-  const incOs = data.include_os_info ? 1 : 0;
   const tx = db.transaction(() => {
     db.run(
-      "INSERT INTO agents (id, name, description, system_prompt, include_personalization, include_session_directory, include_os_info, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
-      [
-        id,
-        data.name,
-        data.description,
-        data.system_prompt,
-        inc,
-        incSd,
-        incOs,
-        now,
-        now,
-      ],
+      "INSERT INTO agents (id, name, description, system_prompt, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
+      [id, data.name, data.description, data.system_prompt, now, now],
     );
     const ins = db.prepare(
       "INSERT INTO agent_tools (agent_id, tool_name, position) VALUES (?, ?, ?)",
@@ -756,9 +755,6 @@ export function createAgentRow(data: {
     name: data.name,
     description: data.description,
     system_prompt: data.system_prompt,
-    include_personalization: inc,
-    include_session_directory: incSd,
-    include_os_info: incOs,
     is_default: 0,
     created_at: now,
     updated_at: now,
@@ -773,31 +769,16 @@ export function updateAgentRow(
     description: string;
     system_prompt: string;
     tools: string[];
-    include_personalization: number;
-    include_session_directory: number;
-    include_os_info: number;
   },
 ): boolean {
   const db = getDb();
   const existing = getAgentById(id);
   if (!existing) return false;
   const now = Date.now();
-  const inc = data.include_personalization ? 1 : 0;
-  const incSd = data.include_session_directory ? 1 : 0;
-  const incOs = data.include_os_info ? 1 : 0;
   const tx = db.transaction(() => {
     db.run(
-      "UPDATE agents SET name = ?, description = ?, system_prompt = ?, include_personalization = ?, include_session_directory = ?, include_os_info = ?, updated_at = ? WHERE id = ?",
-      [
-        data.name,
-        data.description,
-        data.system_prompt,
-        inc,
-        incSd,
-        incOs,
-        now,
-        id,
-      ],
+      "UPDATE agents SET name = ?, description = ?, system_prompt = ?, updated_at = ? WHERE id = ?",
+      [data.name, data.description, data.system_prompt, now, id],
     );
     db.run("DELETE FROM agent_tools WHERE agent_id = ?", [id]);
     const ins = db.prepare(

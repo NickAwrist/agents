@@ -1,8 +1,8 @@
 import { ArrowLeft } from "lucide-react";
 import { TruncateConfirmModal } from "../TruncateConfirmModal";
-import { emptyEditor, PROTECTED_AGENT_NAME } from "./agentsPageUtils";
 import { AgentEditor } from "./AgentEditor";
 import { AgentList } from "./AgentList";
+import { PROTECTED_AGENT_NAME, emptyEditor } from "./agentsPageUtils";
 import { useAgentsPage } from "./useAgentsPage";
 
 export function AgentsPage({ onBack }: { onBack: () => void }) {
@@ -20,7 +20,9 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
           Back to chat
         </button>
         <div className="h-4 w-px bg-border-subtle" />
-        <h1 className="text-[0.9375rem] font-semibold text-foreground">Manage Agents</h1>
+        <h1 className="text-[0.9375rem] font-semibold text-foreground">
+          Manage Agents
+        </h1>
       </header>
 
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border-subtle bg-muted/20 px-5 py-3">
@@ -84,7 +86,9 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
             />
           ) : (
             <div className="flex h-full items-center justify-center">
-              <p className="text-[0.875rem] text-muted-foreground">Select an agent or create a new one</p>
+              <p className="text-[0.875rem] text-muted-foreground">
+                Select an agent or create a new one
+              </p>
             </div>
           )}
         </div>

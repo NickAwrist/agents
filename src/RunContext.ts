@@ -1,4 +1,5 @@
 import type { BaseAgent } from "./agents/BaseAgent";
+import type { PromptContext } from "./prompts/render";
 
 export type StepStatus = "running" | "done" | "error";
 
@@ -30,6 +31,8 @@ export class RunContext {
   readonly signal?: AbortSignal;
   /** Resolved absolute directory for tools (session override or user home). */
   readonly sessionDir?: string;
+  /** Values used to render `{{PLACEHOLDERS}}` in subagent templates. */
+  readonly promptContext?: PromptContext;
   private _steps: Step[] = [];
   private _onChange?: OnStepChange;
   private _onStreamDelta?: OnStreamDelta;
@@ -41,6 +44,7 @@ export class RunContext {
     onStreamDelta?: OnStreamDelta,
     signal?: AbortSignal,
     sessionDir?: string,
+    promptContext?: PromptContext,
   ) {
     this.agentInstance = agentInstance;
     this.agentName = agentInstance.name;
@@ -49,6 +53,7 @@ export class RunContext {
     this._onStreamDelta = onStreamDelta;
     this.signal = signal;
     this.sessionDir = sessionDir;
+    this.promptContext = promptContext;
   }
 
   /** Emit a streaming token delta for content and/or thinking. */
@@ -122,6 +127,7 @@ export class RunContext {
       this._onStreamDelta,
       this.signal,
       this.sessionDir,
+      this.promptContext,
     );
     if (parentStep.status === "running") {
       parentStep.childContext = child;

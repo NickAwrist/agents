@@ -8,6 +8,11 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  CORE_DIRECTIVES,
+  type PromptContext,
+  renderSystemPrompt,
+} from "../../../src/prompts/render";
 import type {
   DebugData,
   Message,
@@ -17,7 +22,9 @@ import type {
 } from "../../types";
 import type { ChatFlightApi } from "./chatTypes";
 export type { ChatFlightApi };
+import { getClientOs } from "../../lib/clientOs";
 import { readSseBlocks } from "../../lib/readSseBlocks";
+import { type AgentData, fetchAgent, fetchAgents } from "../../persist/agents";
 import { fetchSession, patchSessionApi } from "../../persist/sessions";
 import type { UserSettings } from "../../persist/userSettings";
 import { useChatFlight } from "./useChatFlight";
@@ -31,6 +38,7 @@ type Args = {
   isEphemeralRef: MutableRefObject<boolean>;
   userSettingsRef: MutableRefObject<UserSettings>;
   selectedSessionAgentRef: MutableRefObject<string>;
+  agentMapRef: MutableRefObject<Map<string, AgentData>>;
   sessionDirectoryRef: MutableRefObject<string>;
   modelMessagesRef: MutableRefObject<Array<Record<string, unknown>> | null>;
   debugOpenRef: MutableRefObject<boolean>;
@@ -111,42 +119,64 @@ export function useChatStreaming(p: Args) {
     setInFlightSessionId,
   } = flight;
 
+  const resolveAgentTemplate = useCallback(
+    async (name: string): Promise<string> => {
+      const cached = p.agentMapRef.current.get(name);
+      if (cached) return cached.system_prompt;
+      try {
+        const list = await fetchAgents();
+        p.agentMapRef.current = new Map(list.map((a) => [a.name, a]));
+        const hit = p.agentMapRef.current.get(name);
+        if (hit) return hit.system_prompt;
+        const direct = list.find((a) => a.name === name);
+        if (direct) return direct.system_prompt;
+      } catch {
+        /* fall through */
+      }
+      try {
+        const list = await fetchAgents();
+        const byName = list.find((a) => a.name === name);
+        if (byName) return byName.system_prompt;
+        const first = list[0];
+        if (first) return (await fetchAgent(first.id)).system_prompt;
+      } catch {
+        /* ignore */
+      }
+      return "";
+    },
+    [p.agentMapRef],
+  );
+
+  const buildPromptContext = useCallback((): PromptContext => {
+    const u = p.userSettingsRef.current;
+    return {
+      personalization: {
+        name: u.name,
+        location: u.location,
+        preferredFormats: u.preferredFormats,
+      },
+      sessionDirectory: p.sessionDirectoryRef.current.trim() || undefined,
+      os: getClientOs(),
+    };
+  }, [p.sessionDirectoryRef, p.userSettingsRef]);
+
+  const renderCurrentSystemPrompt = useCallback(async (): Promise<string> => {
+    const template = await resolveAgentTemplate(
+      p.selectedSessionAgentRef.current,
+    );
+    return renderSystemPrompt(template, buildPromptContext());
+  }, [buildPromptContext, p.selectedSessionAgentRef, resolveAgentTemplate]);
+
   const fetchDebugData = useCallback(
     async (id: string) => {
       try {
-        const u = p.userSettingsRef.current;
-        const debugRes = await fetch("/api/chat/debug-prompt", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...(p.isEphemeralRef.current
-              ? {
-                  ephemeral: true,
-                  agentName: p.selectedSessionAgentRef.current,
-                }
-              : { sessionId: id }),
-            sessionDirectory: p.sessionDirectoryRef.current.trim() || undefined,
-            personalization: {
-              name: u.name,
-              location: u.location,
-              preferredFormats: u.preferredFormats,
-            },
-          }),
-        });
-        if (!debugRes.ok) {
-          console.error(
-            "debug-prompt failed",
-            await debugRes.text().catch(() => ""),
-          );
-          return;
-        }
-        const debugJson = (await debugRes.json()) as { systemPrompt?: string };
-        const stored = await fetchSession(id);
+        const rendered = await renderCurrentSystemPrompt();
+        const systemPrompt = rendered
+          ? `${rendered}\n\n${CORE_DIRECTIVES}`
+          : CORE_DIRECTIVES;
+        const stored = p.isEphemeralRef.current ? null : await fetchSession(id);
         p.setDebugData({
-          systemPrompt:
-            typeof debugJson.systemPrompt === "string"
-              ? debugJson.systemPrompt
-              : "",
+          systemPrompt,
           history: stored?.history ?? [],
           customTitle: stored?.customTitle ?? null,
           modelMessages: stored?.modelMessages,
@@ -155,13 +185,7 @@ export function useChatStreaming(p: Args) {
         console.error("Failed to load debug data", e);
       }
     },
-    [
-      p.isEphemeralRef,
-      p.selectedSessionAgentRef,
-      p.sessionDirectoryRef,
-      p.setDebugData,
-      p.userSettingsRef,
-    ],
+    [p.isEphemeralRef, p.setDebugData, renderCurrentSystemPrompt],
   );
 
   const runChatTurn = useCallback(
@@ -253,17 +277,13 @@ export function useChatStreaming(p: Args) {
       try {
         let res: Response;
         try {
-          const u = p.userSettingsRef.current;
+          const systemPrompt = await renderCurrentSystemPrompt();
           const chatBody: Record<string, unknown> = {
             message: msg,
             history: priorMessages,
             model: p.selectedModel,
             modelMessages: modelMessagesPayload,
-            personalization: {
-              name: u.name,
-              location: u.location,
-              preferredFormats: u.preferredFormats,
-            },
+            systemPrompt,
           };
           if (ephemeral) {
             chatBody.ephemeral = true;
@@ -473,7 +493,7 @@ export function useChatStreaming(p: Args) {
       p.selectedSessionAgentRef,
       p.sessionDirectoryRef,
       p.setMessages,
-      p.userSettingsRef,
+      renderCurrentSystemPrompt,
     ],
   );
 

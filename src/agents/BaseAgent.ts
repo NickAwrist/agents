@@ -3,6 +3,7 @@ import type { Plan } from "../Plan";
 import type { RunContext, Step } from "../RunContext";
 import { DEFAULT_CHAT_MODEL } from "../constants";
 import { getOllamaClient } from "../ollamaClient";
+import { CORE_DIRECTIVES } from "../prompts/render";
 import type { BaseTool } from "../tools/BaseTool";
 import { toolErrorToString } from "../tools/errors";
 
@@ -30,36 +31,16 @@ export class BaseAgent {
     tools?: BaseTool[],
     model?: string,
     systemPrompt?: string,
-    personalizationBlock?: string | null,
-    sessionContextBlock?: string | null,
-    osContextBlock?: string | null,
   ) {
     this.name = name;
     this.description = description;
 
     this.tools = tools || [];
     this.model = model ?? DEFAULT_CHAT_MODEL;
-    const coreDirectives = [
-      "<tool_format>",
-      "When calling tools, output strictly valid JSON arguments. Do not use custom delimiters or markup.",
-      "For multi-line string arguments (file contents, code), escape newlines as \\n or use an array of strings via the `lines` property when available.",
-      "</tool_format>",
-      "",
-      "<agency>",
-      "You are an action-oriented agent. When you decide on a next step, immediately execute it with a tool call.",
-      "Never end your turn with only a plan or commentary — always follow through with the corresponding tool call unless the task is fully complete.",
-      "</agency>",
-    ].join("\n");
     const base = typeof systemPrompt === "string" ? systemPrompt.trim() : "";
-    const p =
-      typeof personalizationBlock === "string"
-        ? personalizationBlock.trim()
-        : "";
-    const sd =
-      typeof sessionContextBlock === "string" ? sessionContextBlock.trim() : "";
-    const oi = typeof osContextBlock === "string" ? osContextBlock.trim() : "";
-    const core = [base, p, sd, oi].filter((s) => s.length > 0).join("\n\n");
-    this.systemPrompt = core ? `${core}\n\n${coreDirectives}` : coreDirectives;
+    this.systemPrompt = base
+      ? `${base}\n\n${CORE_DIRECTIVES}`
+      : CORE_DIRECTIVES;
 
     this.history = [];
 

@@ -1,13 +1,18 @@
 import { useCallback, useRef, useState } from "react";
-import type { DebugData, Message, TraceModalSelection, TruncateConfirmState } from "../types";
-import type { ChatFlightApi } from "./chat/chatTypes";
 import { traceStepsForModal } from "../components/ExecutionTrace";
-import { useOllamaConnection } from "./chat/useOllamaConnection";
-import { useComfyUIConnection } from "./chat/useComfyUIConnection";
+import type {
+  DebugData,
+  Message,
+  TraceModalSelection,
+  TruncateConfirmState,
+} from "../types";
+import type { ChatFlightApi } from "./chat/chatTypes";
 import { useChatAgentsBootstrap } from "./chat/useChatAgentsBootstrap";
-import { useSettings } from "./chat/useSettings";
-import { useSessionsAndNavigation } from "./chat/useSessionsAndNavigation";
 import { useChatStreaming } from "./chat/useChatStreaming";
+import { useComfyUIConnection } from "./chat/useComfyUIConnection";
+import { useOllamaConnection } from "./chat/useOllamaConnection";
+import { useSessionsAndNavigation } from "./chat/useSessionsAndNavigation";
+import { useSettings } from "./chat/useSettings";
 
 export function useChatApp() {
   const ollama = useOllamaConnection();
@@ -39,9 +44,11 @@ export function useChatApp() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [debugOpen, setDebugOpen] = useState(false);
   const [debugData, setDebugData] = useState<DebugData | null>(null);
-  const [stepsModalData, setStepsModalData] = useState<TraceModalSelection>(null);
+  const [stepsModalData, setStepsModalData] =
+    useState<TraceModalSelection>(null);
   const [editingUserIndex, setEditingUserIndex] = useState<number | null>(null);
-  const [truncateConfirm, setTruncateConfirm] = useState<TruncateConfirmState>(null);
+  const [truncateConfirm, setTruncateConfirm] =
+    useState<TruncateConfirmState>(null);
 
   debugOpenRef.current = debugOpen;
 
@@ -75,6 +82,7 @@ export function useChatApp() {
     isEphemeralRef,
     userSettingsRef: settings.userSettingsRef,
     selectedSessionAgentRef,
+    agentMapRef: agents.agentMapRef,
     sessionDirectoryRef: sessions.sessionDirectoryRef,
     modelMessagesRef,
     debugOpenRef,
