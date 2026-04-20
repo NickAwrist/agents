@@ -4,7 +4,6 @@ import { sseManager } from "../chat/sseManager";
 import { AbortBodySchema } from "../schemas/chat";
 
 const router = Router();
-
 router.post("/", (req, res) => {
   void handleChat(req, res, sseManager);
 });
@@ -16,11 +15,6 @@ router.post("/abort", (req, res) => {
     return;
   }
   const aborted = sseManager.abortRequest(parsed.data.requestId);
-  res.json({ aborted });
-});
-
-router.post("/abort-session/:sessionId", (req, res) => {
-  const aborted = sseManager.abortSession(req.params.sessionId);
   res.json({ aborted });
 });
 

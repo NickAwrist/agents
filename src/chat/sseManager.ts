@@ -35,13 +35,6 @@ export class SseManager {
     return true;
   }
 
-  abortSession(sessionId: string): boolean {
-    const gen = this.activeBySession.get(sessionId);
-    if (!gen) return false;
-    gen.abortController.abort();
-    return true;
-  }
-
   getActive(sessionId: string): ActiveGeneration | null {
     return this.activeBySession.get(sessionId) ?? null;
   }
