@@ -2,10 +2,13 @@ import type { ToolCall } from "ollama";
 import type { Plan } from "../Plan";
 import type { RunContext, Step } from "../RunContext";
 import { DEFAULT_CHAT_MODEL } from "../constants";
+import { logger } from "../logger";
 import { getOllamaClient } from "../ollamaClient";
 import { CORE_DIRECTIVES } from "../prompts/render";
 import type { BaseTool } from "../tools/BaseTool";
 import { toolErrorToString } from "../tools/errors";
+
+const log = logger.child({ component: "BaseAgent" });
 
 type AssistantHistoryMsg = {
   role: string;
@@ -65,12 +68,27 @@ export class BaseAgent {
     toolCall: ToolCall,
     ctx?: RunContext,
     parentStep?: Step,
+    turnIndex?: number,
   ): Promise<string> {
     const toolName = toolCall.function.name;
     const args = this.parseToolArguments(toolCall.function.arguments);
+    const startedAt = Date.now();
+    log.debug({
+      event: "tool_call_start",
+      toolName,
+      agentName: ctx?.agentName,
+      turnIndex,
+    });
 
     const tool = this.TOOL_MAP[toolName];
     if (!tool) {
+      log.debug({
+        event: "tool_call_done",
+        toolName,
+        agentName: ctx?.agentName,
+        turnIndex,
+        runMs: Date.now() - startedAt,
+      });
       return `Error: tool ${toolName} not found`;
     }
 
@@ -78,6 +96,14 @@ export class BaseAgent {
       return await tool.execute(args, ctx, parentStep);
     } catch (e) {
       return `Error: ${toolErrorToString(e, toolName, ctx?.sessionDir)}`;
+    } finally {
+      log.debug({
+        event: "tool_call_done",
+        toolName,
+        agentName: ctx?.agentName,
+        turnIndex,
+        runMs: Date.now() - startedAt,
+      });
     }
   }
 
@@ -231,7 +257,12 @@ export class BaseAgent {
             toolName,
             args,
           });
-          const result = await this.executeToolCall(toolCall, ctx, toolStep);
+          const result = await this.executeToolCall(
+            toolCall,
+            ctx,
+            toolStep,
+            turnIndex,
+          );
           ctx.endStep(toolStep, result);
 
           this.history.push({ role: "tool", content: result });

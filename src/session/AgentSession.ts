@@ -5,6 +5,8 @@ import { agentManager } from "../agents/agentManager";
 import { logger } from "../logger";
 import type { PromptContext } from "../prompts/render";
 
+const log = logger.child({ component: "AgentSession" });
+
 export type HistoryWireStep = Record<string, unknown>;
 
 export type SessionMessage = {
@@ -118,6 +120,15 @@ export class AgentSession extends EventEmitter {
   public async sendChat(prompt: string, signal?: AbortSignal): Promise<string> {
     this.history.push({ role: "user", content: prompt });
 
+    const turnStartedAt = Date.now();
+    let aborted = false;
+    log.debug({
+      event: "agent_turn_start",
+      sessionId: this.sessionId,
+      agentName: this.generalAgent.name,
+      model: this.generalAgent.model,
+    });
+
     const ctx = new RunContext(
       this.generalAgent,
       prompt,
@@ -136,7 +147,6 @@ export class AgentSession extends EventEmitter {
     );
 
     let result = "Error running agent.";
-    let aborted = false;
     try {
       const response = await this.generalAgent.run(prompt, ctx);
       if (signal?.aborted) {
@@ -157,6 +167,14 @@ export class AgentSession extends EventEmitter {
         result = `Error: ${e instanceof Error ? e.message : String(e)}`;
         ctx.failLastRunningStep(result);
       }
+    } finally {
+      log.debug({
+        event: "agent_turn_done",
+        sessionId: this.sessionId,
+        agentName: this.generalAgent.name,
+        runMs: Date.now() - turnStartedAt,
+        aborted,
+      });
     }
 
     this.history.push({
